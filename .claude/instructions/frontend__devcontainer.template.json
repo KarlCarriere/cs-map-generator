@@ -1,0 +1,24 @@
+{
+  "name": "pi-frontend-devcontainer",
+  "runArgs": [
+    "--name",
+    "pi-frontend-devcontainer"
+  ],
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "forwardPorts": [5173],
+  "postCreateCommand": "npm install",
+  "postAttachCommand": {
+    "install-agents": "sh .devcontainer/install-agents.sh"
+  },
+  "remoteEnv": {
+    "NODE_AUTH_TOKEN": "${localEnv:NODE_AUTH_TOKEN}"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "ms-vscode.vscode-typescript-next", "anthropic.claude-code"],
+      "settings": {
+        "claudeCode.respectGitIgnore": false
+      }
+    }
+  }
+}

@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-small-3.10.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/0.5.4/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: sync dependencies
+        run: uv sync --all-extras --all-groups
+
+      - name: ruff check
+        run: uv run ruff check
+
+      - name: ruff format check
+        run: uv run ruff format --check
+
+      - name: mypy
+        run: uv run mypy
+
+      - name: pytest
+        run: uv run pytest -ra

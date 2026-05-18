@@ -1,0 +1,8 @@
+{
+  "description": "Synthetic equatorial bbox used by the offline test suite. Tile N00E000 covers it.",
+  "west": 0.45,
+  "south": 0.45,
+  "east": 0.55,
+  "north": 0.55,
+  "crs_epsg": 4326
+}

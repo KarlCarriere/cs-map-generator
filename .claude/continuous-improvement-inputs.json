@@ -1,0 +1,34 @@
+{
+  "repository": {
+    "owner": "Devsights",
+    "name": "github-copilot-configurations"
+  },
+  "project": {
+    "owner": "Devsights",
+    "ownerType": "org",
+    "number": 5,
+    "name": "Continuous Improvement"
+  },
+  "defaults": {
+    "labels": [
+      "agent-improvement"
+    ],
+    "status": "Backlog",
+    "priority": "P2",
+    "size": "S"
+  },
+  "triage": {
+    "mode": "hybrid",
+    "autoCreateThreshold": 7,
+    "reviewThresholdMin": 4,
+    "reviewThresholdMax": 6,
+    "alwaysCreateFor": [
+      "security-risk",
+      "data-loss",
+      "compliance-risk",
+      "production-incident",
+      "repeat-correction"
+    ],
+    "dedupeWindowDays": 14
+  }
+}

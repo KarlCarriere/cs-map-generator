@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+.python-version.local
+
+# uv
+.uv-cache/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+.cache
+
+# Type checkers
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+
+# Project data — keep the directories but ignore their contents
+data/cache/*
+!data/cache/.gitkeep
+data/output/
+
+# OSMnx's default on-disk cache (created at the CWD when osmnx fetches roads)
+/cache/
+
+# Ad-hoc CLI output directories
+/out/
+/out-cs1/
+/out-cs2/
+
+*.tif
+*.tiff
+*.png.aux.xml
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+
+# Do not ignore committed test fixtures
+!tests/fixtures/**
+
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Per-developer Claude settings (team-wide config stays in .claude/settings.json)
+.claude/settings.local.json
+
+# Build artifacts
+*.log
