@@ -50,10 +50,10 @@ data/output/
 # OSMnx's default on-disk cache (created at the CWD when osmnx fetches roads)
 /cache/
 
-# Ad-hoc CLI output directories
-/out/
-/out-cs1/
-/out-cs2/
+# # Ad-hoc CLI output directories
+# /out/
+# /out-cs1/
+# /out-cs2/
 
 *.tif
 *.tiff
