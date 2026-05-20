@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from cs_mapgen.application.stage import StageContext
-from cs_mapgen.domain.geometry import GeoBounds, Projection, pick_utm_projection
+from cs_mapgen.domain.geometry import GeoBounds, Projection
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -66,14 +66,20 @@ def srtm_cache_directory(tmp_path: Path) -> Iterator[Path]:
     )
     for name in needed_tile_names:
         (cache_dir / name).write_bytes(_synthetic_hgt_bytes(FIXTURE_TILE_SIDE_SAMPLES))
-    yield cache_dir
+    return cache_dir
 
 
 @pytest.fixture
 def stage_context(fixture_bbox: GeoBounds, tmp_path: Path) -> StageContext:
+    # Tests that use this fixture inject `IdentityReprojector`, which leaves coordinates
+    # numerically unchanged. To keep target_bounds and the (faked) reprojected DEM consistent,
+    # we pin `working_crs` to WGS84 and set `target_bounds` to the same lat/lon rectangle as
+    # `fixture_bbox`. Production code uses a real UTM working CRS; the production path is
+    # exercised by integration tests that exercise PyprojReprojector for real.
     return StageContext(
         bounds=fixture_bbox,
-        working_crs=pick_utm_projection(fixture_bbox),
+        target_bounds=fixture_bbox,
+        working_crs=Projection.wgs84(),
         seed=42,
         cache_directory=tmp_path / "cache",
         output_directory=tmp_path / "output",

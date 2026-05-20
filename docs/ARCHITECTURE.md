@@ -34,14 +34,31 @@ The pipeline reads DEM tiles and OpenStreetMap features, projects them into a me
 
 [*] CS2 tile-side is community-measured; pinned with `TODO(adr-0003): verify CS2 tile-side metres` until an authoritative Colossal Order value is published.
 
+### In (v0.2 — water layer)
+- `OSMnxWaterSource` adapter via the `OSMWaterSource` port. Pulls `natural=water` polygons,
+  `waterway={river,stream,canal}` lines, and `natural=coastline` lines. Cache-first.
+- Hydrological conditioning: `ConditionTerrainStage` runs `pysheds.grid.Grid.fill_pits` and
+  `fill_depressions` (Planchon-Darboux / Wang & Liu) on the float, working-CRS, target-grid
+  elevation BEFORE quantisation.
+- Coastline reconstruction: open OSM coastlines are clipped to the bbox and assembled into
+  a sea `MultiPolygon` via `shapely.ops.polygonize` + left/right-of-line side test.
+- `PrepareWaterStage` rasterises polygons + buffered waterways + sea polygon into a
+  `WaterMask` aligned to the prepared terrain grid.
+- `QuantizeHeightmapStage` carves heightmap pixels under the water mask to
+  `sea_level_metres - epsilon` and then quantises to uint16.
+- CS1/CS2 export bundles gain `water_mask.png` (uint8 0/255 grayscale, 1:1 with the
+  heightmap). Manifest `schema_version` is bumped to 2.
+
 ### Out (deferred)
-- Water bodies, coastlines, rivers (v0.2).
 - Forests, land-use, zoning suggestions (v0.3).
 - Procedural noise augmentation, erosion simulation (v0.3+).
 - Railways, transit overlays.
 - Async job queue, multi-bbox batches, GPU acceleration.
 - Live Overpass queries during tests (network-isolated tests only).
-- CS2 binary map package; v0.1 emits only the documented PNG layers + a manifest. Binary packaging is tracked in `docs/adr/0002-cs2-export-format.md`.
+- CS2 binary map package; v0.1/v0.2 emit only the documented PNG layers + a manifest. Binary packaging is tracked in `docs/adr/0002-cs2-export-format.md`.
+- CS2 separate `water_depth.png` channel — pending Q1 in `docs/adr/0005-water-mask-and-carving.md`.
+- River networks as graph-like `RiverNetwork` objects (deferred until flow accumulation
+  earns its keep in v0.3+).
 
 ---
 
@@ -56,12 +73,19 @@ The pipeline reads DEM tiles and OpenStreetMap features, projects them into a me
 - CLI (typer) and FastAPI surfaces hitting the same `Pipeline`.
 - Golden-output determinism test (SHA-256 over output PNG bytes).
 
-### v0.2 — Water + coastlines
-- `OSMWaterSource` (multipolygon assembly from `natural=water`, `waterway=*`).
-- Coastline reconstruction from OSM `natural=coastline`.
-- `WaterMask` value object (binary raster aligned to heightmap grid).
-- Hydrological conditioning: pit-fill (Wang & Liu) before any flow-based work.
-- Water plane integration into CS1/CS2 export (separate channel/asset where engine supports it).
+### v0.2 — Water + coastlines (SHIPPED)
+- `OSMWaterSource` port + `OSMnxWaterSource` adapter (`natural=water` polygons,
+  `waterway={river,stream,canal}` lines, `natural=coastline` lines).
+- Coastline reconstruction (bbox closure via shapely `polygonize` + left/right side test).
+- `WaterMask` value object (binary raster aligned to heightmap grid), `WaterFeatures` DTO,
+  `WaterPolygon` / `Waterway` / `CoastlineSegment` domain types in `cs_mapgen.domain.water`.
+- Hydrological conditioning via `pysheds.grid.Grid.fill_pits` + `fill_depressions`
+  (Planchon-Darboux / Wang & Liu) before quantisation.
+- Pipeline restructure: `PrepareTerrain` now produces float `PreparedTerrain`;
+  `ConditionTerrain` and `PrepareWater` slot in between it and the new `QuantizeHeightmap`.
+- Water plane integration into CS1/CS2 export: heightmap pixels carved to
+  `sea_level - epsilon`; separate `water_mask.png` artifact emitted (uint8 grayscale).
+- Manifest `schema_version` bumped to 2.
 
 ### v0.3 — Forests + land-use
 - `OSMLandUseSource` (forest, residential, industrial, commercial, farmland).
@@ -295,10 +319,16 @@ flowchart TD
     A[GeoBounds in EPSG:4326] --> B{Pick working CRS<br/>local UTM zone}
     B --> C[StageContext<br/>seed, cache, working_crs]
 
-    subgraph TerrainBranch[Terrain Branch]
+    subgraph TerrainBranch[Terrain Branch v0.2]
         C --> D[IngestDEM<br/>SRTMDEMSource]
-        D --> E[PrepareTerrain<br/>void-fill, reproject, resample, normalize]
-        E --> F[Heightmap<br/>uint16 grid]
+        D --> E[PrepareTerrain<br/>reproject, resample → float32 grid]
+        E --> ET[ConditionTerrain<br/>pysheds: fill_pits + fill_depressions]
+    end
+
+    subgraph WaterBranch[Water Branch v0.2]
+        C --> WI[IngestWater<br/>OSMnxWaterSource]
+        WI --> WF[WaterFeatures<br/>polygons, waterways, coastlines]
+        WF --> WP[PrepareWater<br/>reproject, coastline closure,<br/>rasterise to terrain grid]
     end
 
     subgraph RoadsBranch[Roads Branch]
@@ -307,13 +337,16 @@ flowchart TD
         H --> I[RoadNetwork<br/>nodes + edges]
     end
 
+    ET --> Q[QuantizeHeightmap<br/>carve under mask, normalize, uint16]
+    WP --> Q
+    Q --> F[Heightmap + WaterMask]
     F --> J[ComposeMap]
     I --> J
-    J --> K[MapTile]
+    J --> K[MapTile<br/>heightmap + roads + water_mask]
     K --> L1[CS1ExportTarget]
     K --> L2[CS2ExportTarget]
-    L1 --> M[ExportManifest + PNGs<br/>1081x1081]
-    L2 --> N[ExportManifest + PNGs<br/>4096x4096 + world map]
+    L1 --> M[ExportManifest + heightmap.png<br/>+ water_mask.png + roads.geojson<br/>1081x1081]
+    L2 --> N[ExportManifest + heightmap.png<br/>+ worldmap.png + water_mask.png<br/>+ roads.geojson<br/>4096x4096]
 ```
 
 The two branches are logically parallel and share only the immutable `StageContext`. In v0.1 they run sequentially in the same process for simplicity; the architecture does not preclude `ProcessPoolExecutor` parallelism in v1.0 because each branch consumes only frozen inputs.
@@ -337,11 +370,13 @@ The translation of `CenterExtent` → `GeoBounds` is **deterministic**: same `(l
 | Road rasterization (overlay) | line buffer + raster burn | `rasterio.features.rasterize` over shapely LineStrings buffered by class-specific width | Width per class in metres → pixel width derived from heightmap resolution. |
 | CS1 export | crop to 17.28 km square, resample to 1081×1081, normalize to uint16, write PNG | `rasterio.warp.reproject` + `pillow.Image.fromarray` | PNG via Pillow with `mode="I;16"`. |
 | CS2 export | resample to 4096×4096, write PNG + 4096×4096 world map whose center 1024×1024 matches base | `pillow.Image.fromarray` | World map padding strategy: replicate-edge sampling beyond the bbox until v0.4 brings real wide-context DEM fetch. `[RESEARCH]` how CS2 expects sea-level offsets in the world map. |
-| Determinism guard | inputs hash | SHA-256 over canonical JSON of `(bounds, seed, source versions, stage versions)` | Stored in `ExportManifest.inputs_hash`. |
-| Hydrological conditioning (v0.2) | Wang & Liu pit filling | `[RESEARCH]` — `pysheds` or hand-rolled NumPy | Required before any flow-based water work. |
+| Determinism guard | inputs hash | SHA-256 over canonical JSON of `(bounds, seed, source versions, stage versions)` | Stored in `ExportManifest.inputs_hash`. v0.2 extends the payload with `water_mask_sha256`. |
+| Hydrological conditioning (v0.2) | Wang & Liu / Planchon-Darboux pit + depression fill | `pysheds.grid.Grid.fill_pits` then `fill_depressions` | Run on the float, working-CRS, target-grid elevation BEFORE quantisation. Pinned to `pysheds~=0.5`. Documented in ADR 0005. |
+| OSM water polygons (v0.2) | `natural=water` polygons via OSMnx features API | `osmnx.features.features_from_bbox(bbox=..., tags={"natural": ["water"]})` | Rasterised straight to the water mask with `all_touched=True`. |
+| OSM waterways (v0.2) | `waterway=river\|stream\|canal` lines | Same OSMnx call with class-filtered tags | Buffered by class width (river 20 m, stream 5 m, canal 15 m) then burned. Other classes skipped. Documented in ADR 0005. |
+| Coastline reconstruction (v0.2) | clip-then-polygonize closure | `shapely.ops.polygonize` over (clipped coastline ∪ bbox boundary) | Sea polygons selected by right-of-line side test per the OSM "land on left" convention. Antimeridian / polar bboxes raise `InvalidBoundsError`. Documented in ADR 0005. |
+| Water carving (v0.2) | clamp-under-mask | NumPy boolean indexing | `pixel = sea_level - height_scale/65535` only where `mask=True` AND `elevation > sea_level`. Preserves natural sub-sea-level bathymetry. |
 | Procedural sub-pixel variation (v0.3) | OpenSimplex 2D noise + domain warping | `opensimplex` | Seeded from `StageContext.seed`. Augment only; never overwrite DEM where data exists. |
-
-`[RESEARCH]` markers: CS2 world-map sea-level offset semantics, choice of pit-fill library for v0.2.
 
 ---
 
@@ -360,6 +395,7 @@ The translation of `CenterExtent` → `GeoBounds` is **deterministic**: same `(l
 | 9 | OSMnx API drift (`graph_from_bbox` signature changed in 2.0; future minor releases may shift defaults). | M | M | Pin OSMnx with `~=` to a minor release; wrap all OSMnx calls inside `OSMnxRoadSource` so an upstream change touches one file; cover the wrapper with a contract test. |
 | 10 | Height range overflow — real relief exceeds CS1's 1024 m ceiling (Alps, Himalayas, etc.). | M | M | Clip with explicit warning in v0.1; offer compression mode (linear stretch to engine cap) in v0.4; record decision in `ExportManifest`. |
 | 11 | Float precision in geometry equality / topology cleaning (shapely 2.x snap-rounding interactions). | L | M | Use `shapely.set_precision` deliberately; never compare floats with `==`; cover with property tests in v0.3+. |
+| 12 | pysheds licence is GPL-3 (v0.2 dependency). Linking-only / library use is fine for an MIT pipeline; redistribution of pysheds itself in a commercial bundle would propagate GPL-3. | M | M | Document in ADR 0005; re-verify before any commercial redistribution that bundles pysheds. |
 
 ---
 
@@ -385,6 +421,8 @@ The translation of `CenterExtent` → `GeoBounds` is **deterministic**: same `(l
 | `uvicorn` | ASGI server | `~=0.32` | BSD-3 | Default for FastAPI. |
 | `httpx` | Async HTTP client | `~=0.27` | BSD-3 | For SRTM fetches; supports sync+async, retries via transports. |
 | `opensimplex` | Deterministic 2D noise | `~=0.4` | MIT | For v0.3+; `noise` package is unmaintained. |
+| `pysheds` | Hydrological conditioning (pit + depression fill) | `~=0.5` | GPL-3 | v0.2. Numba-accelerated Planchon-Darboux / Wang & Liu. See ADR 0005. The GPL-3 licence applies to derivative redistribution of pysheds itself; we use it as a library call within an MIT-licensed pipeline, which is the standard interaction. Re-verify implications before any commercial-grade redistribution. |
+| `affine` | 6-tuple affine objects compatible with rasterio / pysheds | `~=2.4` | BSD-3 | v0.2. Already a transitive dep via rasterio; pinned directly here to make the pysheds-feeding code path obvious. |
 | `pytest` | Test runner | `~=8.3` | MIT | |
 | `pytest-asyncio` | async tests | `~=0.24` | Apache-2.0 | FastAPI handlers under test. |
 | `httpx` (test) | client for FastAPI testing | shared with above | | Use `ASGITransport` for in-process tests. |
@@ -404,8 +442,13 @@ The translation of `CenterExtent` → `GeoBounds` is **deterministic**: same `(l
 | Infrastructure (ports) | Contract tests against the Protocol | `SRTMDEMSource` cache-hit path uses a fixture tile committed under `tests/fixtures/srtm_cache/`. Cache-miss path is **not** tested with live network; it is covered by injecting a fake `httpx.Client` transport. |
 | Interfaces — CLI | `typer.testing.CliRunner` | `cs-mapgen --version`, `cs-mapgen generate --bbox ... --target cs1 --out tmp/` happy path. Uses a fake `Pipeline` injected via DI. |
 | Interfaces — HTTP | `httpx.AsyncClient` + `ASGITransport` | `GET /healthz`, `POST /maps` with a fake pipeline. Asserts schema, status codes, OpenAPI emission. |
-| Golden output | SHA-256 of the output PNG bytes | The determinism contract. The fixture bbox is tiny (~1 km²) and the cached SRTM tile is committed. Test currently `xfail` until the first successful run records a baseline hash — see `tests/golden/test_full_pipeline_determinism.py`. |
+| Golden output | SHA-256 of `heightmap.png`, `water_mask.png`, and `manifest.json` bytes | The determinism contract. The v0.2 fixture bbox exercises the water branch via a hand-crafted offline `WaterFeatures` (committed under `tests/fixtures/water/`); the cached synthetic SRTM tiles are still built at fixture-setup time. Test runs `xfail` until the first successful run records a baseline; on baseline-recording, the new digests replace the placeholders in `tests/golden/test_full_pipeline_determinism.py`. |
 | Property-based (v0.3+) | Hypothesis | Geometry/topology invariants. Not in v0.1. |
+
+v0.2 fixtures (`tests/fixtures/water/`):
+- `tiny_water.json` — a small offline water fixture (a single polygon, one waterway, one
+  coastline) for the bbox already used by `tests/conftest.py::fixture_bbox`. Committed,
+  provenance documented in `tests/fixtures/README.md`. No live OSM is touched.
 
 **No mocking of GDAL/rasterio internals.** Tests use small real artifacts. Network is forbidden at test time — pytest is configured to fail loudly if a test attempts to hit the network (custom `conftest.py` guard).
 

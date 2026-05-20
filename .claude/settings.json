@@ -90,7 +90,14 @@
       "WebFetch(domain:docs.pydantic.dev)",
       "WebFetch(domain:pydantic.dev)",
       "WebFetch(domain:step.esa.int)",
-      "Bash(unzip -l /home/vscode/.claude/projects/-workspace/1f09a3ff-9f09-4ca8-872e-0576924e73b4/tool-results/webfetch-1779126273249-vyavmp.zip)"
+      "Bash(unzip -l /home/vscode/.claude/projects/-workspace/1f09a3ff-9f09-4ca8-872e-0576924e73b4/tool-results/webfetch-1779126273249-vyavmp.zip)",
+      "WebFetch(domain:pysheds.readthedocs.io)",
+      "Bash(/Users/karlcarriere/perso/cs2_map_generator/.venv/bin/python -c \"import pysheds; print\\(pysheds.__version__\\)\")",
+      "Bash(.venv/bin/python -c \"import pysheds; print\\('pysheds', pysheds.__version__\\)\")",
+      "Read(//Users/karlcarriere/perso/cs2_map_generator/.venv/bin/**)",
+      "Bash(.venv/bin/python -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(file .venv/bin/python && readlink .venv/bin/python && ls -la /usr/bin/python3 2>&1)",
+      "Read(//usr/bin/**)"
     ],
     "deny": [
       "Bash(curl:*)",

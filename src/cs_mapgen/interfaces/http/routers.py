@@ -8,7 +8,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from cs_mapgen import __version__
-from cs_mapgen.application.extent_resolver import ExtentResolutionError, resolve_extent
+from cs_mapgen.application.extent_resolver import (
+    ExtentResolutionError,
+    ResolvedExtent,
+    resolve_extent,
+)
 from cs_mapgen.application.pipeline import Pipeline
 from cs_mapgen.application.stage import StageContext
 from cs_mapgen.config.settings import Settings
@@ -19,7 +23,7 @@ from cs_mapgen.domain.extent import (
     InvalidExtentError,
     MapExtent,
 )
-from cs_mapgen.domain.geometry import GeoBounds, InvalidBoundsError, Projection, pick_utm_projection
+from cs_mapgen.domain.geometry import GeoBounds, InvalidBoundsError, Projection
 from cs_mapgen.domain.manifest import ExportManifest
 from cs_mapgen.domain.target_specs import UnknownTargetError, get_target_spec
 from cs_mapgen.interfaces.http.dependencies import (
@@ -55,8 +59,8 @@ async def create_map(
     pipeline_factory=Depends(get_pipeline_factory),
 ) -> GenerateMapResponse:
     extent = _build_extent(payload)
-    bounds = _resolve_or_400(extent)
-    context = _make_context(settings, bounds, payload)
+    resolved = _resolve_or_400(extent)
+    context = _make_context(settings, resolved, payload)
     pipeline: Pipeline = pipeline_factory(settings, payload.target)
     result = pipeline.run(initial_input=None, context=context)
     manifest = _extract_manifest(result.final_output)
@@ -113,7 +117,7 @@ def _center_extent_from_input(input_model: CenterInput, *, target: str) -> Cente
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
-def _resolve_or_400(extent: MapExtent) -> GeoBounds:
+def _resolve_or_400(extent: MapExtent) -> ResolvedExtent:
     try:
         return resolve_extent(extent)
     except ExtentResolutionError as error:
@@ -122,14 +126,15 @@ def _resolve_or_400(extent: MapExtent) -> GeoBounds:
 
 def _make_context(
     settings: Settings,
-    bounds: GeoBounds,
+    resolved: ResolvedExtent,
     payload: GenerateMapRequest,
 ) -> StageContext:
     output_directory = Path(settings.output_directory) / f"job-seed-{payload.seed}"
     output_directory.mkdir(parents=True, exist_ok=True)
     return StageContext(
-        bounds=bounds,
-        working_crs=pick_utm_projection(bounds),
+        bounds=resolved.fetch_bounds,
+        target_bounds=resolved.target_bounds,
+        working_crs=resolved.working_crs,
         seed=payload.seed,
         cache_directory=settings.cache_directory,
         output_directory=output_directory,

@@ -16,6 +16,7 @@ from cs_mapgen.interfaces.http.dependencies import get_pipeline_factory, get_set
 from tests._fakes import (
     FakeDEMSource,
     FakeOSMSource,
+    FakeOSMWaterSource,
     IdentityReprojector,
     InMemoryArtifactStore,
 )
@@ -30,6 +31,7 @@ def test_app(tmp_path: Path):
             PipelineBuilder()
             .with_dem_source(FakeDEMSource())
             .with_osm_source(FakeOSMSource())
+            .with_water_source(FakeOSMWaterSource())
             .with_reprojector(IdentityReprojector())
             .with_artifact_store(InMemoryArtifactStore())
             .with_export_target(CS1ExportTarget(reprojector=IdentityReprojector()))

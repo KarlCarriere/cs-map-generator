@@ -6,9 +6,10 @@ from dataclasses import dataclass
 
 from cs_mapgen.application.ports import Reprojector
 from cs_mapgen.application.stage import StageContext
-from cs_mapgen.application.stages.prepare_terrain import PrepareTerrainResult
+from cs_mapgen.application.stages.quantize_heightmap import QuantizeHeightmapResult
 from cs_mapgen.domain.network import RoadEdge, RoadNetwork
 from cs_mapgen.domain.raster import Heightmap
+from cs_mapgen.domain.water import WaterMask
 
 DEFAULT_HIGHWAY_ALLOWLIST: tuple[str, ...] = (
     "motorway",
@@ -25,6 +26,7 @@ DEFAULT_HIGHWAY_ALLOWLIST: tuple[str, ...] = (
 class PrepareRoadsResult:
     heightmap: Heightmap
     road_network: RoadNetwork
+    water_mask: WaterMask
 
 
 class PrepareRoadsStage:
@@ -47,10 +49,12 @@ class PrepareRoadsStage:
         self._reprojector = reprojector
         self._highway_allowlist = highway_allowlist
 
-    def run(self, inputs: PrepareTerrainResult, context: StageContext) -> PrepareRoadsResult:
-        reprojected = self._reprojector.reproject_network(
-            inputs.road_network, context.working_crs
-        )
+    def run(
+        self,
+        inputs: QuantizeHeightmapResult,
+        context: StageContext,
+    ) -> PrepareRoadsResult:
+        reprojected = self._reprojector.reproject_network(inputs.road_network, context.working_crs)
         filtered_edges = self._filter_by_class(reprojected.edges, self._highway_allowlist)
         # Drop nodes that no surviving edge references.
         active_node_ids = {edge.source for edge in filtered_edges} | {
@@ -64,15 +68,17 @@ class PrepareRoadsStage:
                 key=lambda node: node.node_id,
             )
         )
-        sorted_edges = tuple(
-            sorted(filtered_edges, key=lambda edge: (edge.source, edge.target))
-        )
+        sorted_edges = tuple(sorted(filtered_edges, key=lambda edge: (edge.source, edge.target)))
         filtered_network = RoadNetwork(
             nodes=surviving_nodes,
             edges=sorted_edges,
             crs=context.working_crs,
         )
-        return PrepareRoadsResult(heightmap=inputs.heightmap, road_network=filtered_network)
+        return PrepareRoadsResult(
+            heightmap=inputs.heightmap,
+            road_network=filtered_network,
+            water_mask=inputs.water_mask,
+        )
 
     @staticmethod
     def _filter_by_class(

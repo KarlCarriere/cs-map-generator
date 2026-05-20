@@ -15,6 +15,12 @@ from cs_mapgen.application.ports import Reprojector
 from cs_mapgen.domain.geometry import Projection
 from cs_mapgen.domain.network import RoadEdge, RoadNetwork, RoadNode
 from cs_mapgen.domain.raster import DEMTile
+from cs_mapgen.domain.water import (
+    CoastlineSegment,
+    WaterFeatures,
+    WaterPolygon,
+    Waterway,
+)
 
 RESAMPLING_BY_NAME: dict[str, int] = {}  # populated lazily to avoid eager rasterio import
 
@@ -102,6 +108,47 @@ class PyprojReprojector(Reprojector):
         return RoadNetwork(
             nodes=reprojected_nodes,
             edges=reprojected_edges,
+            crs=target,
+        )
+
+    def reproject_water_features(
+        self,
+        features: WaterFeatures,
+        target: Projection,
+    ) -> WaterFeatures:
+        if features.crs.epsg == target.epsg:
+            return features
+
+        from pyproj import Transformer  # noqa: PLC0415
+
+        transformer = Transformer.from_crs(
+            f"EPSG:{features.crs.epsg}",
+            f"EPSG:{target.epsg}",
+            always_xy=True,
+        )
+
+        reprojected_polygons = tuple(
+            WaterPolygon(
+                exterior=_reproject_coords(polygon.exterior, transformer),
+                holes=tuple(_reproject_coords(hole, transformer) for hole in polygon.holes),
+            )
+            for polygon in features.polygons
+        )
+        reprojected_waterways = tuple(
+            Waterway(
+                geometry=_reproject_coords(waterway.geometry, transformer),
+                waterway_class=waterway.waterway_class,
+            )
+            for waterway in features.waterways
+        )
+        reprojected_coastlines = tuple(
+            CoastlineSegment(geometry=_reproject_coords(segment.geometry, transformer))
+            for segment in features.coastlines
+        )
+        return WaterFeatures(
+            polygons=reprojected_polygons,
+            waterways=reprojected_waterways,
+            coastlines=reprojected_coastlines,
             crs=target,
         )
 

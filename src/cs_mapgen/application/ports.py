@@ -10,6 +10,7 @@ from cs_mapgen.domain.manifest import ArtifactEntry, ExportManifest
 from cs_mapgen.domain.map_tile import MapTile
 from cs_mapgen.domain.network import RoadNetwork
 from cs_mapgen.domain.raster import DEMTile
+from cs_mapgen.domain.water import WaterFeatures
 
 
 @runtime_checkable
@@ -34,6 +35,29 @@ class OSMSource(Protocol):
 
 
 @runtime_checkable
+class OSMWaterSource(Protocol):
+    """Fetches OSM-derived water features for a bounding box.
+
+    The port returns ready-to-rasterise domain primitives (`WaterFeatures`) rather than raw OSM
+    elements, geopandas dataframes, or shapely geometries. Rationale:
+
+    - The application layer must not depend on shapely/geopandas — those imports stay in
+      `infrastructure/osm/`. Returning `WaterFeatures` (plain tuples + numpy-free) keeps the
+      port boundary framework-clean.
+    - Stage tests can construct hand-crafted `WaterFeatures` directly without monkeypatching
+      geopandas or pinning a fixture GeoDataFrame.
+    - Adapters are free to choose their fetch + tag-filter strategy (Overpass, pyrosm, OSMnx
+      `features_from_bbox`) without touching the stage code.
+    """
+
+    def fetch_water(
+        self,
+        bounds: GeoBounds,
+        context: StageContext,
+    ) -> WaterFeatures: ...
+
+
+@runtime_checkable
 class Reprojector(Protocol):
     """Reprojects rasters and vectors between coordinate systems."""
 
@@ -49,6 +73,12 @@ class Reprojector(Protocol):
         network: RoadNetwork,
         target: Projection,
     ) -> RoadNetwork: ...
+
+    def reproject_water_features(
+        self,
+        features: WaterFeatures,
+        target: Projection,
+    ) -> WaterFeatures: ...
 
 
 @runtime_checkable

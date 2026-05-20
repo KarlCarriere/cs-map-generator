@@ -22,7 +22,11 @@ from typing import Annotated
 import typer
 
 from cs_mapgen import __version__
-from cs_mapgen.application.extent_resolver import ExtentResolutionError, resolve_extent
+from cs_mapgen.application.extent_resolver import (
+    ExtentResolutionError,
+    ResolvedExtent,
+    resolve_extent,
+)
 from cs_mapgen.application.pipeline import Pipeline, PipelineResult
 from cs_mapgen.application.stage import StageContext
 from cs_mapgen.config.settings import Settings, load_settings
@@ -33,7 +37,7 @@ from cs_mapgen.domain.extent import (
     InvalidExtentError,
     MapExtent,
 )
-from cs_mapgen.domain.geometry import GeoBounds, InvalidBoundsError, Projection, pick_utm_projection
+from cs_mapgen.domain.geometry import GeoBounds, InvalidBoundsError, Projection
 from cs_mapgen.domain.manifest import ExportManifest
 from cs_mapgen.domain.target_specs import UnknownTargetError, get_target_spec
 from cs_mapgen.interfaces.composition import TARGET_REGISTRY, build_production_pipeline
@@ -133,9 +137,9 @@ def generate(
 ) -> None:
     settings = load_settings()
     extent = _parse_extent(center=center, radius_tiles=radius_tiles, bbox=bbox, target=target)
-    geo_bounds = _resolve_or_fail(extent)
+    resolved = _resolve_or_fail(extent)
     pipeline = build_production_pipeline(settings, target_id=target)
-    context = _make_context(settings, geo_bounds, seed, out, dump_intermediates)
+    context = _make_context(settings, resolved, seed, out, dump_intermediates)
     result = _run_pipeline(pipeline, context, show_progress=not no_progress)
     manifest = _extract_manifest(result)
     typer.echo(manifest.to_json())
@@ -166,13 +170,9 @@ def _parse_extent(
     # support for mutually-exclusive options is awkward and the error message we produce here
     # mentions both flags explicitly, which is what the user wants to see.
     if center is None and bbox is None:
-        raise typer.BadParameter(
-            "Provide exactly one of --center or --bbox (got neither)."
-        )
+        raise typer.BadParameter("Provide exactly one of --center or --bbox (got neither).")
     if center is not None and bbox is not None:
-        raise typer.BadParameter(
-            "--center and --bbox are mutually exclusive (got both). Pick one."
-        )
+        raise typer.BadParameter("--center and --bbox are mutually exclusive (got both). Pick one.")
 
     if bbox is not None:
         if radius_tiles is not None:
@@ -190,7 +190,7 @@ def _build_center_extent(
     radius_tiles: int | None,
     target: str,
 ) -> CenterExtent:
-    assert center is not None  # noqa: S101 — guarded by _parse_extent
+    assert center is not None
     point = _parse_center(center)
     effective_radius = _resolve_default_radius(radius_tiles=radius_tiles, target=target)
     try:
@@ -255,7 +255,7 @@ def _parse_center(raw: str) -> GeoPoint:
         raise typer.BadParameter(str(error)) from error
 
 
-def _resolve_or_fail(extent: MapExtent) -> GeoBounds:
+def _resolve_or_fail(extent: MapExtent) -> ResolvedExtent:
     try:
         return resolve_extent(extent)
     except ExtentResolutionError as error:
@@ -264,15 +264,16 @@ def _resolve_or_fail(extent: MapExtent) -> GeoBounds:
 
 def _make_context(
     settings: Settings,
-    bounds: GeoBounds,
+    resolved: ResolvedExtent,
     seed: int,
     output_directory: Path,
     dump_intermediates: bool,
 ) -> StageContext:
     output_directory.mkdir(parents=True, exist_ok=True)
     return StageContext(
-        bounds=bounds,
-        working_crs=pick_utm_projection(bounds),
+        bounds=resolved.fetch_bounds,
+        target_bounds=resolved.target_bounds,
+        working_crs=resolved.working_crs,
         seed=seed,
         cache_directory=settings.cache_directory,
         output_directory=output_directory,

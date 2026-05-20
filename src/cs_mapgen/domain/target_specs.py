@@ -58,9 +58,7 @@ class TargetSpec:
                 f"tile_side_metres must be strictly positive, got {self.tile_side_metres}"
             )
         if self.grid_dimension <= 0:
-            raise ValueError(
-                f"grid_dimension must be strictly positive, got {self.grid_dimension}"
-            )
+            raise ValueError(f"grid_dimension must be strictly positive, got {self.grid_dimension}")
         if self.grid_dimension % 2 == 0:
             # A center tile only exists on odd-dimension grids. Both CS1 (9) and CS2 (21) are
             # odd by design — reject an even grid up front so a future regression cannot silently
@@ -116,9 +114,7 @@ def get_target_spec(target_id: str) -> TargetSpec:
         return _REGISTRY[target_id]
     except KeyError as error:
         known = sorted(_REGISTRY)
-        raise UnknownTargetError(
-            f"Unknown target {target_id!r}. Known targets: {known}"
-        ) from error
+        raise UnknownTargetError(f"Unknown target {target_id!r}. Known targets: {known}") from error
 
 
 def registered_target_ids() -> tuple[str, ...]:

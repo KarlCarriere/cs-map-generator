@@ -28,9 +28,7 @@ def tiles_covering(bounds: GeoBounds) -> tuple[str, ...]:
     seam artifacts during reprojection.
     """
     if bounds.crs != Projection.wgs84() and bounds.crs.epsg != WGS84_EPSG:
-        raise ValueError(
-            f"SRTM tile indexing requires WGS84 bounds, got EPSG:{bounds.crs.epsg}"
-        )
+        raise ValueError(f"SRTM tile indexing requires WGS84 bounds, got EPSG:{bounds.crs.epsg}")
     lat_start = floor(bounds.south) - 1
     lat_stop = ceil(bounds.north) + 1
     lon_start = floor(bounds.west) - 1

@@ -37,9 +37,7 @@ def test_should_reject_bounds_when_longitude_exceeds_wgs84_range() -> None:
 
 
 def test_should_pick_northern_utm_zone_when_centroid_is_in_north_hemisphere() -> None:
-    paris_bbox = GeoBounds(
-        west=2.2, south=48.8, east=2.5, north=49.0, crs=Projection.wgs84()
-    )
+    paris_bbox = GeoBounds(west=2.2, south=48.8, east=2.5, north=49.0, crs=Projection.wgs84())
 
     projection = pick_utm_projection(paris_bbox)
 
@@ -59,9 +57,7 @@ def test_should_pick_southern_utm_zone_when_centroid_is_in_south_hemisphere() ->
 
 
 def test_should_reject_polar_bounds_when_picking_utm_zone() -> None:
-    arctic_bbox = GeoBounds(
-        west=0.0, south=85.0, east=1.0, north=86.0, crs=Projection.wgs84()
-    )
+    arctic_bbox = GeoBounds(west=0.0, south=85.0, east=1.0, north=86.0, crs=Projection.wgs84())
 
     with pytest.raises(InvalidBoundsError):
         pick_utm_projection(arctic_bbox)

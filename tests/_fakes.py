@@ -12,6 +12,7 @@ from cs_mapgen.domain.manifest import ArtifactEntry, ExportManifest
 from cs_mapgen.domain.map_tile import MapTile
 from cs_mapgen.domain.network import RoadEdge, RoadNetwork, RoadNode
 from cs_mapgen.domain.raster import DEMTile
+from cs_mapgen.domain.water import WaterFeatures
 
 FAKE_DEM_SIDE = 64
 FAKE_DEM_NODATA = -9999.0
@@ -20,29 +21,42 @@ SHA256_HEX_LENGTH = 64
 
 
 class FakeDEMSource:
+    """Synthetic DEM that aligns its raster grid with `context.target_bounds`.
+
+    Production DEM sources (SRTM, etc.) fetch in WGS84 and rely on `Reprojector` to land
+    the raster on the working CRS. Test code wires `IdentityReprojector` in, so the fake
+    has to emit the DEM directly in the working-CRS coordinate frame — otherwise the
+    `PrepareTerrainStage` crop (which keys off `context.target_bounds`) can't find any
+    overlap. We deliberately ignore the WGS84 `bounds` argument and use `target_bounds`
+    instead, matching the production invariant that "after reprojection, the DEM grid is
+    in the working CRS."
+    """
+
     provider_id = "fake-dem"
 
     def fetch(self, bounds: GeoBounds, context: StageContext) -> DEMTile:
-        del context
+        del bounds
         elevation = np.linspace(
             0.0,
             500.0,
             FAKE_DEM_SIDE * FAKE_DEM_SIDE,
             dtype=np.float32,
         ).reshape((FAKE_DEM_SIDE, FAKE_DEM_SIDE))
-        pixel_size = (bounds.east - bounds.west) / FAKE_DEM_SIDE
+        target = context.target_bounds
+        pixel_width = (target.east - target.west) / FAKE_DEM_SIDE
+        pixel_height = -(target.north - target.south) / FAKE_DEM_SIDE
         transform = (
-            pixel_size,
+            pixel_width,
             0.0,
-            bounds.west,
+            target.west,
             0.0,
-            -pixel_size,
-            bounds.north,
+            pixel_height,
+            target.north,
         )
         return DEMTile(
             elevation=elevation,
             transform=transform,
-            crs=Projection.wgs84(),
+            crs=context.working_crs,
             nodata=FAKE_DEM_NODATA,
             provider=self.provider_id,
             resolution_metres=FAKE_RESOLUTION_METRES,
@@ -89,6 +103,36 @@ class IdentityReprojector:
 
     def reproject_network(self, network: RoadNetwork, target: Projection) -> RoadNetwork:
         return RoadNetwork(nodes=network.nodes, edges=network.edges, crs=target)
+
+    def reproject_water_features(
+        self,
+        features: WaterFeatures,
+        target: Projection,
+    ) -> WaterFeatures:
+        return WaterFeatures(
+            polygons=features.polygons,
+            waterways=features.waterways,
+            coastlines=features.coastlines,
+            crs=target,
+        )
+
+
+class FakeOSMWaterSource:
+    """Returns a fixed, empty WaterFeatures by default. Tests inject features via constructor."""
+
+    def __init__(self, features: WaterFeatures | None = None) -> None:
+        self._features = features
+
+    def fetch_water(self, bounds: GeoBounds, context: StageContext) -> WaterFeatures:
+        del context
+        if self._features is not None:
+            return self._features
+        return WaterFeatures(
+            polygons=(),
+            waterways=(),
+            coastlines=(),
+            crs=bounds.crs,
+        )
 
 
 class InMemoryArtifactStore:

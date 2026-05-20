@@ -45,7 +45,7 @@ coverage.xml
 # Project data — keep the directories but ignore their contents
 data/cache/*
 !data/cache/.gitkeep
-data/output/
+# data/output/
 
 # OSMnx's default on-disk cache (created at the CWD when osmnx fetches roads)
 /cache/

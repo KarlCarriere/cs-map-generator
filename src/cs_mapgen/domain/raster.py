@@ -1,4 +1,9 @@
-"""Raster value objects: DEM tiles, heightmaps, and feature masks."""
+"""Raster value objects: DEM tiles, heightmaps, and feature masks.
+
+`WaterMask` lives in `cs_mapgen.domain.water` since v0.2 to keep water-specific value objects
+co-located with `WaterFeatures` / `Waterway` etc. It is re-exported here for backward
+compatibility with any callers that still import it from `cs_mapgen.domain.raster`.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +13,22 @@ import numpy as np
 from numpy.typing import NDArray
 
 from cs_mapgen.domain.geometry import GeoBounds, Projection
+from cs_mapgen.domain.water import WaterMask  # re-export for backward compatibility
 
 AFFINE_TUPLE_LENGTH = 6
 MIN_HEIGHTMAP_SIDE_PIXELS = 32
 HEIGHTMAP_UINT16_DTYPE = np.uint16
+
+__all__ = [
+    "AFFINE_TUPLE_LENGTH",
+    "DEMTile",
+    "HEIGHTMAP_UINT16_DTYPE",
+    "Heightmap",
+    "LandUseMap",
+    "MIN_HEIGHTMAP_SIDE_PIXELS",
+    "VegetationMask",
+    "WaterMask",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,37 +72,18 @@ class Heightmap:
 
     def __post_init__(self) -> None:
         if self.pixels.dtype != HEIGHTMAP_UINT16_DTYPE:
-            raise ValueError(
-                f"Heightmap pixels must be uint16, got {self.pixels.dtype}"
-            )
+            raise ValueError(f"Heightmap pixels must be uint16, got {self.pixels.dtype}")
         if self.pixels.shape != (self.height, self.width):
             raise ValueError(
                 f"Pixel shape {self.pixels.shape} does not match declared "
                 f"(height={self.height}, width={self.width})"
             )
         if self.width < MIN_HEIGHTMAP_SIDE_PIXELS or self.height < MIN_HEIGHTMAP_SIDE_PIXELS:
-            raise ValueError(
-                f"Heightmap side must be at least {MIN_HEIGHTMAP_SIDE_PIXELS} pixels"
-            )
+            raise ValueError(f"Heightmap side must be at least {MIN_HEIGHTMAP_SIDE_PIXELS} pixels")
         if self.height_scale_metres <= 0:
             raise ValueError("height_scale_metres must be positive")
         if self.sea_level_metres < 0 or self.sea_level_metres >= self.height_scale_metres:
-            raise ValueError(
-                "sea_level_metres must lie within [0, height_scale_metres)"
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class WaterMask:
-    """A binary water mask aligned to the heightmap grid."""
-
-    mask: NDArray[np.bool_]
-    transform: tuple[float, float, float, float, float, float]
-    crs: Projection
-
-    def __post_init__(self) -> None:
-        if self.mask.ndim != 2:
-            raise ValueError(f"WaterMask must be 2D, got shape {self.mask.shape}")
+            raise ValueError("sea_level_metres must lie within [0, height_scale_metres)")
 
 
 @dataclass(frozen=True, slots=True)

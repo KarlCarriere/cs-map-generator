@@ -8,7 +8,7 @@ from cs_mapgen.domain.map_tile import MapTile
 
 
 class ComposeMapStage:
-    """Combine the prepared heightmap and road network into a `MapTile`."""
+    """Combine the prepared heightmap, road network, and water mask into a `MapTile`."""
 
     name = "compose_map"
 
@@ -23,4 +23,5 @@ class ComposeMapStage:
             road_network=inputs.road_network,
             bounds=context.bounds,
             target_id=self._target_id,
+            water_mask=inputs.water_mask,
         )

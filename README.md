@@ -51,10 +51,11 @@ Every run writes the following to `--out`:
 
 | File | Targets | Description |
 | --- | --- | --- |
-| `heightmap.png` | CS1, CS2 | 16-bit grayscale heightmap. 1081 × 1081 for CS1, 4096 × 4096 for CS2. |
+| `heightmap.png` | CS1, CS2 | 16-bit grayscale heightmap. 1081 × 1081 for CS1, 4096 × 4096 for CS2. Pixels under OSM water are carved to just below sea level so the in-game water plane covers them on import (v0.2). |
 | `worldmap.png` | CS2 | 16-bit grayscale, 4096 × 4096. Centre 1024 × 1024 region matches the heightmap pixel-for-pixel. |
+| `water_mask.png` | CS1, CS2 | 8-bit grayscale binary mask (0 = land, 255 = water). Aligned 1:1 with `heightmap.png`. The single source of truth for "this pixel is water"; pairs with the carved heightmap. Introduced in v0.2 — see [docs/adr/0005-water-mask-and-carving.md](docs/adr/0005-water-mask-and-carving.md). |
 | `roads.geojson` | CS1, CS2 | OSM-derived road network as a WGS84 GeoJSON `FeatureCollection` (RFC 7946). One LineString per road segment; `properties` carry `highway_class` and `length_metres`. Useful in QGIS / leaflet / Mapbox — Cities: Skylines itself does **not** ingest road data. |
-| `manifest.json` | CS1, CS2 | Reproducibility record: input bbox, seed, every artifact's SHA-256, and an `inputs_hash` that pins the full input set. |
+| `manifest.json` | CS1, CS2 | Reproducibility record: input bbox, seed, every artifact's SHA-256, and an `inputs_hash` that pins the full input set. `schema_version` is 2 since v0.2. |
 
 ## Loading the output into Cities: Skylines
 
@@ -83,6 +84,7 @@ CS1's Map Editor accepts a 1081 × 1081 16-bit grayscale PNG via **Import Height
   - [0002 — CS2 export format: known pieces and open questions](docs/adr/0002-cs2-export-format.md)
   - [0003 — center-coordinate input, target-tile registry, extent resolution](docs/adr/0003-center-coordinate-input.md)
   - [0004 — SRTM source strategy: ESA STEP for MVP, NASA EarthData for production](docs/adr/0004-srtm-source-strategy.md)
+  - [0005 — water mask, carving, pit-fill, coastline reconstruction (v0.2)](docs/adr/0005-water-mask-and-carving.md)
 
 ## Determinism contract
 

@@ -1,4 +1,9 @@
-"""CLI happy-path tests. The pipeline factory is monkeypatched to inject fakes."""
+"""CLI happy-path tests. The pipeline factory is monkeypatched to inject fakes.
+
+v0.2 NOTE: the pipeline now includes `ConditionTerrainStage` (pysheds) and
+`PrepareWaterStage` (rasterio). Both are part of the `gis` optional dependency group; tests
+that exercise the full pipeline therefore require it.
+"""
 
 from __future__ import annotations
 
@@ -10,14 +15,13 @@ import pytest
 from typer.testing import CliRunner
 
 from cs_mapgen import __version__
-from cs_mapgen.application.extent_resolver import resolve_extent
 from cs_mapgen.application.pipeline import PipelineBuilder
-from cs_mapgen.domain.extent import CenterExtent, GeoPoint
 from cs_mapgen.infrastructure.export import CS1ExportTarget
 from cs_mapgen.interfaces.cli.app import app
 from tests._fakes import (
     FakeDEMSource,
     FakeOSMSource,
+    FakeOSMWaterSource,
     IdentityReprojector,
     InMemoryArtifactStore,
 )
@@ -35,7 +39,7 @@ def _reset_artifact_store_holder() -> None:
     ARTIFACT_STORE_HOLDER.clear()
 
 
-def _build_fake_pipeline(_settings, *, target_id):  # noqa: ARG001 — signature must mirror production
+def _build_fake_pipeline(_settings, *, target_id):
     del target_id
     # Stash the artifact store so the equivalence test can read the captured PNG bytes.
     store = InMemoryArtifactStore()
@@ -44,6 +48,7 @@ def _build_fake_pipeline(_settings, *, target_id):  # noqa: ARG001 — signature
         PipelineBuilder()
         .with_dem_source(FakeDEMSource())
         .with_osm_source(FakeOSMSource())
+        .with_water_source(FakeOSMWaterSource())
         .with_reprojector(IdentityReprojector())
         .with_artifact_store(store)
         .with_export_target(CS1ExportTarget(reprojector=IdentityReprojector()))
@@ -122,16 +127,19 @@ def test_should_print_manifest_json_when_generate_with_center(
     assert payload["seed"] == 42
 
 
-def test_should_produce_identical_heightmap_when_center_and_equivalent_bbox_are_used(
+def test_should_produce_deterministic_heightmap_when_center_is_re_run_with_same_seed(
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Determinism equivalence: --center and the equivalent --bbox must produce the same PNG.
+    """Determinism: two runs of the same --center invocation must produce byte-identical PNGs.
 
-    This is the contract guaranteed by ADR 0003: the pipeline still consumes a `GeoBounds`, so
-    when the resolved `GeoBounds` from `--center` exactly equals the explicit `--bbox`, the
-    output bytes must match.
+    v0.2 NOTE: previously this test asserted equivalence between --center and the
+    `resolved` --bbox derived from it. That equivalence no longer holds because
+    `resolve_extent` now produces an exact metric square in working_crs for --center while
+    --bbox is interpreted as a WGS84 fetch envelope (with an inscribed UTM rectangle as the
+    target). The two paths intentionally model different user intents; we keep the
+    determinism contract by re-running the same shape twice instead.
     """
     monkeypatch.setattr(
         "cs_mapgen.interfaces.cli.app.build_production_pipeline",
@@ -143,54 +151,27 @@ def test_should_produce_identical_heightmap_when_center_and_equivalent_bbox_are_
     radius_tiles = 4
     target = "cs1"
 
-    extent = CenterExtent(
-        center=GeoPoint(longitude=center_lon, latitude=center_lat),
-        radius_tiles=radius_tiles,
-        target_id=target,
-    )
-    equivalent_bounds = resolve_extent(extent)
+    args = [
+        "generate",
+        "--center",
+        f"{center_lat},{center_lon}",
+        "--radius-tiles",
+        str(radius_tiles),
+        "--target",
+        target,
+        "--seed",
+        "7",
+    ]
 
-    result_center = runner.invoke(
-        app,
-        [
-            "generate",
-            "--center",
-            f"{center_lat},{center_lon}",
-            "--radius-tiles",
-            str(radius_tiles),
-            "--target",
-            target,
-            "--out",
-            str(tmp_path / "center-out"),
-            "--seed",
-            "7",
-        ],
-    )
-    assert result_center.exit_code == 0, result_center.stdout
-    center_png = ARTIFACT_STORE_HOLDER["store"].captured["heightmap.png"]
+    first = runner.invoke(app, [*args, "--out", str(tmp_path / "first")])
+    assert first.exit_code == 0, first.stdout
+    first_png = ARTIFACT_STORE_HOLDER["store"].captured["heightmap.png"]
 
-    bbox_string = (
-        f"{equivalent_bounds.west},{equivalent_bounds.south},"
-        f"{equivalent_bounds.east},{equivalent_bounds.north}"
-    )
-    result_bbox = runner.invoke(
-        app,
-        [
-            "generate",
-            "--bbox",
-            bbox_string,
-            "--target",
-            target,
-            "--out",
-            str(tmp_path / "bbox-out"),
-            "--seed",
-            "7",
-        ],
-    )
-    assert result_bbox.exit_code == 0, result_bbox.stdout
-    bbox_png = ARTIFACT_STORE_HOLDER["store"].captured["heightmap.png"]
+    second = runner.invoke(app, [*args, "--out", str(tmp_path / "second")])
+    assert second.exit_code == 0, second.stdout
+    second_png = ARTIFACT_STORE_HOLDER["store"].captured["heightmap.png"]
 
-    assert hashlib.sha256(center_png).hexdigest() == hashlib.sha256(bbox_png).hexdigest()
+    assert hashlib.sha256(first_png).hexdigest() == hashlib.sha256(second_png).hexdigest()
 
 
 def test_should_exit_with_usage_error_when_center_and_bbox_are_both_passed(

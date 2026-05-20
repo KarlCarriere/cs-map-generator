@@ -34,9 +34,7 @@ class RoadEdge:
 
     def __post_init__(self) -> None:
         if len(self.geometry) < MIN_EDGE_VERTICES:
-            raise ValueError(
-                f"RoadEdge geometry must have at least {MIN_EDGE_VERTICES} vertices"
-            )
+            raise ValueError(f"RoadEdge geometry must have at least {MIN_EDGE_VERTICES} vertices")
         if self.length_metres < 0:
             raise ValueError(f"Edge length must be non-negative, got {self.length_metres}")
         if not self.highway_class:
@@ -57,9 +55,7 @@ class RoadNetwork:
             raise ValueError("RoadNetwork nodes must have unique node_id values")
         for edge in self.edges:
             if edge.source not in node_ids or edge.target not in node_ids:
-                raise ValueError(
-                    f"Edge {edge.source}->{edge.target} references unknown node id"
-                )
+                raise ValueError(f"Edge {edge.source}->{edge.target} references unknown node id")
 
     @property
     def node_count(self) -> int:

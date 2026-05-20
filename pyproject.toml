@@ -30,6 +30,12 @@ gis = [
     "osmnx~=2.1",
     "networkx~=3.4",
     "scikit-image~=0.24",
+    # v0.2: hydrological conditioning (pit-fill / Wang & Liu) before water carving.
+    # Pinned to ~=0.5 per ADR 0005 — 0.5 (Aug 2025) is the current release, restores numpy 2.x
+    # compatibility, and drops `pgrid`/`rfsm` (we never used them; we use `pysheds.grid.Grid`
+    # which is the sgrid/Numba path). Loosen this only when the ADR is updated.
+    "pysheds~=0.5",
+    "affine~=2.4",
 ]
 
 [project.scripts]
@@ -96,7 +102,16 @@ ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["osmnx.*", "rasterio.*", "geopandas.*", "shapely.*", "pyproj.*", "skimage.*"]
+module = [
+    "osmnx.*",
+    "rasterio.*",
+    "geopandas.*",
+    "shapely.*",
+    "pyproj.*",
+    "skimage.*",
+    "pysheds.*",
+    "affine",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

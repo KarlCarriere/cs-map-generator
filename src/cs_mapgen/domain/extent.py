@@ -88,9 +88,7 @@ class CenterExtent:
                 f"radius_tiles must be an int, got {type(self.radius_tiles).__name__}"
             )
         if self.radius_tiles < 0:
-            raise InvalidExtentError(
-                f"radius_tiles must be non-negative, got {self.radius_tiles}"
-            )
+            raise InvalidExtentError(f"radius_tiles must be non-negative, got {self.radius_tiles}")
         if not self.target_id:
             raise InvalidExtentError("CenterExtent.target_id must be a non-empty string")
 

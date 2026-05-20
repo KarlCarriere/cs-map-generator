@@ -54,9 +54,7 @@ class SRTMDEMSource:
         # tiles (e.g. 11×11) without the cost of committing real 26 MB hgt files. Production
         # always uses the SRTM 1-arc-second native side (3601).
         if tile_side_samples < MIN_TEST_TILE_SIDE_SAMPLES:
-            raise ValueError(
-                f"tile_side_samples must be at least {MIN_TEST_TILE_SIDE_SAMPLES}"
-            )
+            raise ValueError(f"tile_side_samples must be at least {MIN_TEST_TILE_SIDE_SAMPLES}")
         self._cache_directory = cache_directory
         self._base_url = base_url.rstrip("/") + "/"
         self._http_client = http_client
@@ -211,9 +209,7 @@ def _read_hgt(path: Path, side_samples: int) -> np.ndarray:
     expected_samples = side_samples * side_samples
     expected_bytes = expected_samples * 2
     if len(raw) != expected_bytes:
-        raise ValueError(
-            f"SRTM tile {path} has {len(raw)} bytes; expected {expected_bytes}"
-        )
+        raise ValueError(f"SRTM tile {path} has {len(raw)} bytes; expected {expected_bytes}")
     samples = struct.unpack(f">{expected_samples}h", raw)
     elevation = np.asarray(samples, dtype=np.float32).reshape((side_samples, side_samples))
     return elevation

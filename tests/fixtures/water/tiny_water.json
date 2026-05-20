@@ -1,0 +1,17 @@
+{
+  "description": "Tiny offline water fixture for the v0.2 golden-output test. Geometry is in WGS84 (EPSG:4326) lon/lat, inside the bbox declared in ../tiny_bbox.json. Provenance: hand-crafted, not derived from a live OSM extract. The geometry exercises the polygon-rasterise and waterway-buffer paths; coastlines are tested separately in tests/infrastructure/test_coastline_reconstruction.py.",
+  "crs_epsg": 4326,
+  "polygons": [
+    {
+      "exterior": [[0.48, 0.48], [0.52, 0.48], [0.52, 0.52], [0.48, 0.52], [0.48, 0.48]],
+      "holes": []
+    }
+  ],
+  "waterways": [
+    {
+      "geometry": [[0.41, 0.45], [0.45, 0.49], [0.49, 0.55]],
+      "waterway_class": "river"
+    }
+  ],
+  "coastlines": []
+}

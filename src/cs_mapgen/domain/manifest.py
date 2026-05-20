@@ -7,7 +7,12 @@ from dataclasses import asdict, dataclass
 
 from cs_mapgen.domain.geometry import GeoBounds
 
-MANIFEST_SCHEMA_VERSION = 1
+# Schema version 2 (v0.2):
+# - Adds `water_mask.png` to the artifact set (CS1 + CS2).
+# - Adds `water_mask_sha256` to the inputs_hash payload.
+# - Bumped per ADR 0005. Downstream consumers MUST treat unknown >2 versions as
+#   forward-incompatible and refuse to ingest.
+MANIFEST_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)

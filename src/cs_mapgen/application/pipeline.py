@@ -10,6 +10,7 @@ from cs_mapgen.application.ports import (
     DEMSource,
     ExportTarget,
     OSMSource,
+    OSMWaterSource,
     Reprojector,
 )
 from cs_mapgen.application.stage import Stage, StageContext
@@ -70,16 +71,21 @@ class Pipeline:
 
 
 class PipelineBuilder:
-    """Wires the MVP terrain+roads pipeline by injecting concrete ports.
+    """Wires the terrain + roads + water pipeline by injecting concrete ports.
 
     The builder enforces presence of every required port before producing a `Pipeline`. It
     deliberately does not import any infrastructure module — concrete adapters are passed in
     from the composition root (CLI or HTTP entry point).
+
+    v0.2 adds the `with_water_source(...)` port and the `build_terrain_roads_and_water()` method.
+    The legacy `build_terrain_and_roads()` entry point is retained for tests that still want
+    the v0.1 happy path (no pit-fill, no water) by composing without a water source.
     """
 
     def __init__(self) -> None:
         self._dem_source: DEMSource | None = None
         self._osm_source: OSMSource | None = None
+        self._water_source: OSMWaterSource | None = None
         self._reprojector: Reprojector | None = None
         self._export_target: ExportTarget | None = None
         self._artifact_store: ArtifactStore | None = None
@@ -90,6 +96,10 @@ class PipelineBuilder:
 
     def with_osm_source(self, source: OSMSource) -> PipelineBuilder:
         self._osm_source = source
+        return self
+
+    def with_water_source(self, source: OSMWaterSource) -> PipelineBuilder:
+        self._water_source = source
         return self
 
     def with_reprojector(self, reprojector: Reprojector) -> PipelineBuilder:
@@ -105,17 +115,32 @@ class PipelineBuilder:
         return self
 
     def build_terrain_and_roads(self) -> Pipeline:
-        # Local imports keep the application package free of stage-construction at import time
-        # and make the wiring explicit at build time.
+        """Build the v0.2 pipeline: terrain (conditioned) + water + roads.
+
+        The name is kept for backward-compat with v0.1 callers. The pipeline now includes the
+        water branch — callers that did not register a water source get a fail-fast error.
+        """
+        return self._build_full_pipeline()
+
+    def build_full_pipeline(self) -> Pipeline:
+        """v0.2-explicit alias for `build_terrain_and_roads`. Prefer this in new code."""
+        return self._build_full_pipeline()
+
+    def _build_full_pipeline(self) -> Pipeline:
         from cs_mapgen.application.stages.compose_map import ComposeMapStage
+        from cs_mapgen.application.stages.condition_terrain import ConditionTerrainStage
         from cs_mapgen.application.stages.export_map import ExportMapStage
         from cs_mapgen.application.stages.ingest_dem import IngestDEMStage
         from cs_mapgen.application.stages.ingest_roads import IngestRoadsStage
+        from cs_mapgen.application.stages.ingest_water import IngestWaterStage
         from cs_mapgen.application.stages.prepare_roads import PrepareRoadsStage
         from cs_mapgen.application.stages.prepare_terrain import PrepareTerrainStage
+        from cs_mapgen.application.stages.prepare_water import PrepareWaterStage
+        from cs_mapgen.application.stages.quantize_heightmap import QuantizeHeightmapStage
 
         dem_source = self._require(self._dem_source, "dem_source")
         osm_source = self._require(self._osm_source, "osm_source")
+        water_source = self._require(self._water_source, "water_source")
         reprojector = self._require(self._reprojector, "reprojector")
         export_target = self._require(self._export_target, "export_target")
         artifact_store = self._require(self._artifact_store, "artifact_store")
@@ -124,7 +149,11 @@ class PipelineBuilder:
             stages=(
                 IngestDEMStage(dem_source=dem_source),
                 IngestRoadsStage(osm_source=osm_source),
+                IngestWaterStage(water_source=water_source),
                 PrepareTerrainStage(reprojector=reprojector),
+                ConditionTerrainStage(),
+                PrepareWaterStage(reprojector=reprojector),
+                QuantizeHeightmapStage(),
                 PrepareRoadsStage(reprojector=reprojector),
                 ComposeMapStage(target_id=export_target.target_id),
                 ExportMapStage(target=export_target, store=artifact_store),

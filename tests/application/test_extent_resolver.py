@@ -1,17 +1,23 @@
 """Unit tests for `resolve_extent`.
 
-Covers the lat/lon → metres math at multiple latitudes, the boundary rejections
-(antimeridian, pole), and the equivalence between `CenterExtent` and `BoundsExtent` shapes.
+The resolver now returns a `ResolvedExtent` carrying:
+
+- `target_bounds` (working_crs): exact axis-aligned UTM square / rectangle.
+- `fetch_bounds` (WGS84): lat/lon envelope guaranteed to cover `target_bounds`.
+- `working_crs`: the picked UTM zone.
+
+These tests assert:
+
+- For `CenterExtent`, `target_bounds` is exactly square with the requested metric side.
+- `fetch_bounds` always covers `target_bounds` after projecting target corners back to WGS84.
+- The previous boundary rejections (antimeridian, latitude cap, unknown target) still apply.
 """
 
 from __future__ import annotations
 
-from math import cos, radians
-
 import pytest
 
 from cs_mapgen.application.extent_resolver import (
-    EARTH_RADIUS_METRES,
     ExtentResolutionError,
     resolve_extent,
 )
@@ -22,11 +28,10 @@ from cs_mapgen.domain.target_specs import (
     CS2_TILE_SIDE_METRES,
 )
 
-TWO_PI = 2.0 * 3.141592653589793
-METRES_PER_LATITUDE_DEGREE = (TWO_PI * EARTH_RADIUS_METRES) / 360.0
+WGS84 = Projection.wgs84()
 
-# 0.5% tolerance, per the brief.
-WIDTH_TOLERANCE = 0.005
+# Sub-metre tolerance on the metric square side length.
+SIDE_TOLERANCE_METRES = 1e-6
 
 CS1_FULL_RADIUS = 4
 CS2_FULL_RADIUS = 10
@@ -36,29 +41,20 @@ def _expected_side_metres(tile_side_metres: float, radius_tiles: int) -> float:
     return (2 * radius_tiles + 1) * tile_side_metres
 
 
-def _width_metres(bounds: GeoBounds, latitude_degrees: float) -> float:
-    width_degrees = bounds.east - bounds.west
-    metres_per_lon_degree = METRES_PER_LATITUDE_DEGREE * cos(radians(latitude_degrees))
-    return width_degrees * metres_per_lon_degree
-
-
-def _height_metres(bounds: GeoBounds) -> float:
-    return (bounds.north - bounds.south) * METRES_PER_LATITUDE_DEGREE
-
-
 @pytest.mark.parametrize(
     ("latitude", "longitude", "radius_tiles", "target_id", "tile_side"),
     [
         (0.0, 0.0, CS1_FULL_RADIUS, "cs1", CS1_TILE_SIDE_METRES),  # equator
         (45.0, 10.0, CS1_FULL_RADIUS, "cs1", CS1_TILE_SIDE_METRES),  # mid-latitude
         (70.0, -100.0, CS1_FULL_RADIUS, "cs1", CS1_TILE_SIDE_METRES),  # high-latitude
+        (46.81, -71.21, CS1_FULL_RADIUS, "cs1", CS1_TILE_SIDE_METRES),  # Quebec (the bug)
         (0.0, 0.0, CS2_FULL_RADIUS, "cs2", CS2_TILE_SIDE_METRES),
         (45.0, 10.0, CS2_FULL_RADIUS, "cs2", CS2_TILE_SIDE_METRES),
         (70.0, -100.0, CS2_FULL_RADIUS, "cs2", CS2_TILE_SIDE_METRES),
         (45.0, 10.0, 0, "cs1", CS1_TILE_SIDE_METRES),  # single-tile collapse
     ],
 )
-def test_should_produce_correct_side_length_when_resolving_center_extent(
+def test_should_produce_target_bounds_with_exact_metric_side_when_resolving_center_extent(
     latitude: float,
     longitude: float,
     radius_tiles: int,
@@ -71,37 +67,87 @@ def test_should_produce_correct_side_length_when_resolving_center_extent(
         target_id=target_id,
     )
 
-    bounds = resolve_extent(extent)
+    resolved = resolve_extent(extent)
 
     expected = _expected_side_metres(tile_side, radius_tiles)
-    actual_width = _width_metres(bounds, latitude)
-    actual_height = _height_metres(bounds)
+    width = resolved.target_bounds.east - resolved.target_bounds.west
+    height = resolved.target_bounds.north - resolved.target_bounds.south
 
-    assert abs(actual_width - expected) / expected < WIDTH_TOLERANCE
-    assert abs(actual_height - expected) / expected < WIDTH_TOLERANCE
+    assert width == pytest.approx(expected, abs=SIDE_TOLERANCE_METRES)
+    assert height == pytest.approx(expected, abs=SIDE_TOLERANCE_METRES)
 
 
-def test_should_center_bounds_on_input_coordinate_when_resolving_center_extent() -> None:
+def test_should_pick_utm_zone_19n_when_resolving_quebec_center() -> None:
     extent = CenterExtent(
         center=GeoPoint(longitude=-71.21, latitude=46.81),
         radius_tiles=CS1_FULL_RADIUS,
         target_id="cs1",
     )
 
-    bounds = resolve_extent(extent)
-    centroid_lon, centroid_lat = bounds.centroid
+    resolved = resolve_extent(extent)
 
-    assert centroid_lon == pytest.approx(-71.21, abs=1e-9)
-    assert centroid_lat == pytest.approx(46.81, abs=1e-9)
+    # Quebec at lon -71.21 falls into UTM zone 19 (northern hemisphere → EPSG 32619).
+    assert resolved.working_crs.epsg == 32619
+    assert resolved.target_bounds.crs.epsg == 32619
+    assert resolved.fetch_bounds.crs.epsg == 4326
 
 
-def test_should_return_bounds_unchanged_when_resolving_bounds_extent() -> None:
-    inner = GeoBounds(
-        west=-1.0, south=10.0, east=1.0, north=12.0, crs=Projection.wgs84()
+def test_should_center_target_bounds_on_projected_center_when_resolving_center_extent() -> None:
+    extent = CenterExtent(
+        center=GeoPoint(longitude=-71.21, latitude=46.81),
+        radius_tiles=CS1_FULL_RADIUS,
+        target_id="cs1",
     )
+
+    resolved = resolve_extent(extent)
+    target_centroid_x, target_centroid_y = resolved.target_bounds.centroid
+
+    # The centroid of target_bounds should equal the projected centre point.
+    from pyproj import Transformer  # noqa: PLC0415
+
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:32619", always_xy=True)
+    expected_x, expected_y = transformer.transform(-71.21, 46.81)
+    assert target_centroid_x == pytest.approx(expected_x, abs=1e-6)
+    assert target_centroid_y == pytest.approx(expected_y, abs=1e-6)
+
+
+def test_should_envelope_target_bounds_when_deriving_fetch_bounds() -> None:
+    """`fetch_bounds` must cover the WGS84 projection of every corner of target_bounds."""
+    extent = CenterExtent(
+        center=GeoPoint(longitude=-71.21, latitude=46.81),
+        radius_tiles=CS1_FULL_RADIUS,
+        target_id="cs1",
+    )
+
+    resolved = resolve_extent(extent)
+
+    from pyproj import Transformer  # noqa: PLC0415
+
+    to_wgs84 = Transformer.from_crs(
+        f"EPSG:{resolved.working_crs.epsg}", "EPSG:4326", always_xy=True
+    )
+    corners = [
+        (resolved.target_bounds.west, resolved.target_bounds.south),
+        (resolved.target_bounds.east, resolved.target_bounds.south),
+        (resolved.target_bounds.east, resolved.target_bounds.north),
+        (resolved.target_bounds.west, resolved.target_bounds.north),
+    ]
+    for x, y in corners:
+        lon, lat = to_wgs84.transform(x, y)
+        assert resolved.fetch_bounds.west <= lon <= resolved.fetch_bounds.east
+        assert resolved.fetch_bounds.south <= lat <= resolved.fetch_bounds.north
+
+
+def test_should_preserve_user_bbox_as_fetch_bounds_when_resolving_bounds_extent() -> None:
+    inner = GeoBounds(west=-1.0, south=10.0, east=1.0, north=12.0, crs=WGS84)
     extent = BoundsExtent(bounds=inner)
 
-    assert resolve_extent(extent) is inner
+    resolved = resolve_extent(extent)
+
+    assert resolved.fetch_bounds is inner
+    # target_bounds is in working_crs (UTM), inscribed inside the projected fetch_bounds quad.
+    assert resolved.target_bounds.crs.epsg == resolved.working_crs.epsg
+    assert resolved.target_bounds.crs.epsg != WGS84.epsg
 
 
 def test_should_reject_center_extent_when_resolution_crosses_antimeridian() -> None:
