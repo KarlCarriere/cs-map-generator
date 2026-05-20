@@ -1,0 +1,40 @@
+{
+  "artifacts": [
+    {
+      "mime": "image/png",
+      "name": "heightmap.png",
+      "path": "data/output/montreal-cs2/heightmap.png",
+      "sha256": "f49c96503bc5aa045911acd91a58c659efa476f76183ca19bce7e70d45690dd8"
+    },
+    {
+      "mime": "image/png",
+      "name": "worldmap.png",
+      "path": "data/output/montreal-cs2/worldmap.png",
+      "sha256": "ac0a30678542706734f4294483ddf064fe22a58e5a879c1e2a1c87c498bf8db7"
+    },
+    {
+      "mime": "image/png",
+      "name": "water_mask.png",
+      "path": "data/output/montreal-cs2/water_mask.png",
+      "sha256": "01c53b6e6cf3c296848c44d93d55331aad244db24d6cadc35f40b1cf6b89da87"
+    },
+    {
+      "mime": "application/geo+json",
+      "name": "roads.geojson",
+      "path": "data/output/montreal-cs2/roads.geojson",
+      "sha256": "1b887ff07efdeb7d161bc0b937f98b751948e20dd98179220653802fc10032bd"
+    }
+  ],
+  "bounds": {
+    "crs_epsg": 4326,
+    "east": -73.18336952521548,
+    "north": 45.76311622305724,
+    "south": 45.23577612446368,
+    "west": -73.933281476474
+  },
+  "created_at_utc": "2026-01-01T00:00:42+00:00",
+  "inputs_hash": "4dba512d516360c295191f8b0cb2cd8e0d1df1ffa277d33878afda2466b852c2",
+  "schema_version": 2,
+  "seed": 42,
+  "target": "cs2"
+}

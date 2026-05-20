@@ -103,6 +103,7 @@ def test_should_produce_byte_identical_artifacts_when_pipeline_runs_with_fixed_i
     context = StageContext(
         bounds=GOLDEN_BBOX,
         target_bounds=GOLDEN_BBOX,
+        playable_bounds=GOLDEN_BBOX,
         working_crs=Projection.wgs84(),
         seed=GOLDEN_SEED,
         cache_directory=tmp_path / "cache",

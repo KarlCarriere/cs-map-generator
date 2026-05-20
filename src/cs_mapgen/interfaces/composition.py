@@ -28,6 +28,15 @@ TARGET_REGISTRY: dict[str, type[ExportTarget]] = {
     CS2ExportTarget.target_id: CS2ExportTarget,
 }
 
+# Per-target internal heightmap side. CS2 carries a 4× wider worldmap layer at the same
+# metres-per-pixel scale as the heightmap, so we render the whole worldmap extent at full PNG
+# resolution (4096 px) and let the export adapter crop the centre 1024 px for heightmap.png.
+# CS1 stays at the historical default (1081, matching the CS1 heightmap PNG side + buffer).
+TARGET_HEIGHTMAP_SIDE_PIXELS: dict[str, int] = {
+    CS1ExportTarget.target_id: 1081,
+    CS2ExportTarget.target_id: 4096,
+}
+
 
 def build_production_pipeline(settings: Settings, target_id: str) -> Pipeline:
     if target_id not in TARGET_REGISTRY:
@@ -50,6 +59,7 @@ def build_production_pipeline(settings: Settings, target_id: str) -> Pipeline:
         reprojector=reprojector,
         artifact_store=artifact_store,
         export_target=export_target,
+        target_side_pixels=TARGET_HEIGHTMAP_SIDE_PIXELS.get(target_id),
     )
 
 
@@ -61,6 +71,7 @@ def build_pipeline_with(
     reprojector: Reprojector,
     artifact_store: ArtifactStore,
     export_target: ExportTarget,
+    target_side_pixels: int | None = None,
 ) -> Pipeline:
     return (
         PipelineBuilder()
@@ -70,5 +81,5 @@ def build_pipeline_with(
         .with_reprojector(reprojector)
         .with_artifact_store(artifact_store)
         .with_export_target(export_target)
-        .build_terrain_and_roads()
+        .build_terrain_and_roads(target_side_pixels=target_side_pixels)
     )

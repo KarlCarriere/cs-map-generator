@@ -32,6 +32,7 @@ from numpy.typing import NDArray
 
 from cs_mapgen.application.stage import StageContext
 from cs_mapgen.application.stages.prepare_water import PrepareWaterResult
+from cs_mapgen.domain.geometry import GeoBounds
 from cs_mapgen.domain.network import RoadNetwork
 from cs_mapgen.domain.raster import HEIGHTMAP_UINT16_DTYPE, Heightmap
 from cs_mapgen.domain.water import WaterMask
@@ -91,11 +92,12 @@ class QuantizeHeightmapStage:
         water_and_above_sea = water_mask.mask & (elevation > carve_target_metres) & ~nodata
         elevation[water_and_above_sea] = carve_target_metres
 
-        # Linear stretch into [0, height_scale]. The historical v0.1 stretch used the input
-        # relief min/max from prepare_terrain. After conditioning + carving, the absolute range
-        # is essentially unchanged (pit-fill only raises low pixels by metres at most; carving
-        # only lowers high pixels that were also water — vanishingly rare). We re-derive
-        # min/max on the live (post-carve) array to be precise.
+        # Linear stretch into [0, height_scale]. For targets with a wider rendered extent than
+        # playable area (CS2 worldmap, render_extent_multiplier > 1), the min/max range used
+        # for the stretch comes from the PLAYABLE region only — otherwise distant high points
+        # in the worldmap (e.g. mountains beyond the play area) would crush the playable area's
+        # elevation range into a narrow grayscale band. Pixels in the surrounding worldmap that
+        # fall outside the playable range simply clip to 0 or 65535 in the output PNG.
         valid_mask = ~nodata
         if not bool(valid_mask.any()):
             raise ValueError(
@@ -103,8 +105,18 @@ class QuantizeHeightmapStage:
                 "after prepare_terrain validated non-empty coverage"
             )
 
+        playable_window = _playable_pixel_window(
+            transform=prepared.transform,
+            shape=elevation.shape,
+            target_bounds=context.target_bounds,
+            playable_bounds=context.playable_bounds,
+        )
         normalised, valid_min, valid_max = _linear_stretch(
-            elevation, valid_mask, height_scale, sea_level
+            elevation,
+            valid_mask,
+            height_scale,
+            sea_level,
+            stretch_window=playable_window,
         )
 
         # Clip + quantise. We compress (rather than clip) when relief overshoots height_scale;
@@ -142,17 +154,31 @@ def _linear_stretch(
     valid_mask: NDArray[np.bool_],
     height_scale_metres: float,
     sea_level_metres: float,
+    stretch_window: tuple[int, int, int, int] | None = None,
 ) -> tuple[NDArray[np.float32], float, float]:
     # `height_scale_metres` / `sea_level_metres` are recorded on the Heightmap value object but
     # do NOT participate in the stretch math here — that is intentional and matches v0.1
-    # behaviour exactly. We map the full real-world relief into the uint16 [0, 1] range;
-    # the engine-side slider (CS1 Map Editor / CS2 Map Editor) interprets uint16 1.0 as
-    # `height_scale_metres`. Decoupling the stretch from the scale is what lets the user
-    # import the same PNG with different ceilings (e.g. 1024 m or 2048 m) without re-running
-    # the pipeline.
+    # behaviour exactly. We map a chosen relief range into the uint16 [0, 1] range; the
+    # engine-side slider (CS1/CS2 Map Editor) interprets uint16 1.0 as `height_scale_metres`.
+    #
+    # `stretch_window`, when supplied as `(row_start, row_end, col_start, col_end)`, restricts
+    # the min/max derivation to that pixel window (the playable region). Pixels outside the
+    # window still get stretched using the same parameters and may clip — the heightmap PNG
+    # only needs full dynamic range INSIDE the playable area.
     del height_scale_metres, sea_level_metres
-    valid_min = float(elevation[valid_mask].min())
-    valid_max = float(elevation[valid_mask].max())
+    if stretch_window is None:
+        sample_elevation = elevation
+        sample_valid = valid_mask
+    else:
+        row_start, row_end, col_start, col_end = stretch_window
+        sample_elevation = elevation[row_start:row_end, col_start:col_end]
+        sample_valid = valid_mask[row_start:row_end, col_start:col_end]
+        if not bool(sample_valid.any()):
+            # Fall back to the full array if the playable window happens to be all nodata.
+            sample_elevation = elevation
+            sample_valid = valid_mask
+    valid_min = float(sample_elevation[sample_valid].min())
+    valid_max = float(sample_elevation[sample_valid].max())
     relief = valid_max - valid_min
     if relief <= 0.0:
         # Flat DEM — return mid-grey so the resulting uint16 has a valid value everywhere.
@@ -164,3 +190,27 @@ def _linear_stretch(
         0.0,
     ).astype(np.float32)
     return stretched, valid_min, valid_max
+
+
+def _playable_pixel_window(
+    *,
+    transform: tuple[float, float, float, float, float, float],
+    shape: tuple[int, int],
+    target_bounds: GeoBounds,
+    playable_bounds: GeoBounds,
+) -> tuple[int, int, int, int]:
+    """Return `(row_start, row_end, col_start, col_end)` for the playable region.
+
+    `transform` is the rasterio-style affine `(a, b, c, d, e, f)` of the rendered raster,
+    where the raster spans `target_bounds`. If `playable_bounds == target_bounds` (CS1) this
+    returns the full window.
+    """
+    pixel_width, b, west_origin, d, pixel_height, north_origin = transform
+    del b, d, target_bounds  # transform + shape are authoritative for the raster's pixel grid
+    rows, cols = shape
+    col_start = max(0, int(np.floor((playable_bounds.west - west_origin) / pixel_width)))
+    col_end = min(cols, int(np.ceil((playable_bounds.east - west_origin) / pixel_width)))
+    # `pixel_height` is negative (rasterio convention: y decreases as row increases).
+    row_start = max(0, int(np.floor((playable_bounds.north - north_origin) / pixel_height)))
+    row_end = min(rows, int(np.ceil((playable_bounds.south - north_origin) / pixel_height)))
+    return row_start, row_end, col_start, col_end

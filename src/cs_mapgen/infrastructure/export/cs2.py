@@ -35,14 +35,15 @@ from cs_mapgen.application.stage import StageContext
 from cs_mapgen.domain.geometry import Projection
 from cs_mapgen.domain.manifest import ArtifactEntry, ExportManifest
 from cs_mapgen.domain.map_tile import MapTile
+from cs_mapgen.domain.target_specs import get_target_spec
 from cs_mapgen.domain.water import WaterMask
 from cs_mapgen.infrastructure.export._geojson import (
     GEOJSON_MIME,
     encode_road_network_geojson,
 )
 from cs_mapgen.infrastructure.export._png import (
-    encode_uint16_grayscale_png,
     encode_uint8_grayscale_png,
+    encode_uint16_grayscale_png,
     resample_bool_nearest,
     resample_uint16_nearest,
 )
@@ -50,7 +51,6 @@ from cs_mapgen.infrastructure.export._png import (
 TARGET_ID = "cs2"
 HEIGHTMAP_SIDE_PIXELS = 4096
 WORLDMAP_SIDE_PIXELS = 4096
-WORLDMAP_INNER_REGION_PIXELS = 1024
 HEIGHTMAP_FILENAME = "heightmap.png"
 WORLDMAP_FILENAME = "worldmap.png"
 WATER_MASK_FILENAME = "water_mask.png"
@@ -71,16 +71,30 @@ class CS2ExportTarget:
         store: ArtifactStore,
         context: StageContext,
     ) -> ExportManifest:
-        # Resample input heightmap to CS2's full 4096 × 4096 grid.
-        base_pixels = resample_uint16_nearest(tile.heightmap.pixels, HEIGHTMAP_SIDE_PIXELS)
-        heightmap_bytes = encode_uint16_grayscale_png(base_pixels)
+        # The pipeline renders one (side, side) terrain covering `context.target_bounds`. For
+        # CS2 this is the worldmap extent (4× linear). We derive both PNG outputs from it:
+        #   - worldmap.png is the full raster, resampled to 4096 × 4096.
+        #   - heightmap.png is the inner playable region (centre 1/multiplier^2 of pixels),
+        #     resampled up to 4096 × 4096.
+        spec = get_target_spec(self.target_id)
+        rendered_pixels = tile.heightmap.pixels
+        playable_pixels = _crop_playable_region(rendered_pixels, spec.render_extent_multiplier)
+
+        heightmap_pixels = resample_uint16_nearest(playable_pixels, HEIGHTMAP_SIDE_PIXELS)
+        heightmap_bytes = encode_uint16_grayscale_png(heightmap_pixels)
         heightmap_entry = store.write(HEIGHTMAP_FILENAME, heightmap_bytes, context)
 
-        worldmap_pixels = _build_worldmap(base_pixels)
+        worldmap_pixels = resample_uint16_nearest(rendered_pixels, WORLDMAP_SIDE_PIXELS)
         worldmap_bytes = encode_uint16_grayscale_png(worldmap_pixels)
         worldmap_entry = store.write(WORLDMAP_FILENAME, worldmap_bytes, context)
 
-        water_mask_entry = _write_water_mask(tile.water_mask, HEIGHTMAP_SIDE_PIXELS, store, context)
+        water_mask_entry = _write_water_mask(
+            tile.water_mask,
+            spec.render_extent_multiplier,
+            HEIGHTMAP_SIDE_PIXELS,
+            store,
+            context,
+        )
 
         roads_wgs84 = self._reprojector.reproject_network(tile.road_network, Projection.wgs84())
         roads_bytes = encode_road_network_geojson(roads_wgs84, tile.bounds)
@@ -113,6 +127,7 @@ class CS2ExportTarget:
 
 def _write_water_mask(
     water_mask: WaterMask | None,
+    render_extent_multiplier: float,
     target_side: int,
     store: ArtifactStore,
     context: StageContext,
@@ -120,7 +135,10 @@ def _write_water_mask(
     if water_mask is None:
         mask_array = np.zeros((target_side, target_side), dtype=np.bool_)
     else:
-        mask_array = water_mask.mask
+        # The water mask is rasterised on the full rendered extent (worldmap area for CS2). For
+        # the export PNG we need the playable region only, so the mask stays aligned with the
+        # heightmap PNG which is also cropped from the rendered extent.
+        mask_array = _crop_playable_region(water_mask.mask, render_extent_multiplier)
         if mask_array.shape != (target_side, target_side):
             mask_array = resample_bool_nearest(mask_array, target_side)
     grayscale = np.where(mask_array, np.uint8(255), np.uint8(0)).astype(np.uint8)
@@ -135,25 +153,34 @@ def _override_mime(entry: ArtifactEntry, mime: str) -> ArtifactEntry:
     return ArtifactEntry(name=entry.name, path=entry.path, sha256=entry.sha256, mime=mime)
 
 
-def _build_worldmap(base_pixels: np.ndarray) -> np.ndarray:
-    """Embed the base heightmap into the center 1024×1024 region of a 4096×4096 world map.
+def _crop_playable_region(
+    pixels: np.ndarray,
+    render_extent_multiplier: float,
+) -> np.ndarray:
+    """Return the centred subarray covering the in-game playable area.
 
-    Outside the center region we pad with the median elevation of the base heightmap. This is a
-    placeholder strategy: TODO(adr-0002) — replace with real wide-context DEM fetch in v0.4.
+    The pipeline renders a single raster over `target_bounds` (the worldmap extent for CS2;
+    same as the playable extent for CS1). To produce the heightmap and water-mask PNGs we have
+    to extract the inner `1 / multiplier` fraction on each axis. For CS2 (multiplier = 4.0)
+    that's the centre 1/4 of the raster on each axis — 1/16 by area. For CS1 (multiplier 1.0)
+    this is a no-op pass-through.
     """
-    inner = resample_uint16_nearest(base_pixels, WORLDMAP_INNER_REGION_PIXELS)
-    pad_value = int(np.median(base_pixels))
-    worldmap = np.full(
-        (WORLDMAP_SIDE_PIXELS, WORLDMAP_SIDE_PIXELS),
-        pad_value,
-        dtype=np.uint16,
-    )
-    offset = (WORLDMAP_SIDE_PIXELS - WORLDMAP_INNER_REGION_PIXELS) // 2
-    worldmap[
-        offset : offset + WORLDMAP_INNER_REGION_PIXELS,
-        offset : offset + WORLDMAP_INNER_REGION_PIXELS,
-    ] = inner
-    return worldmap
+    if render_extent_multiplier <= 1.0:
+        return pixels
+    if pixels.ndim != 2 or pixels.shape[0] != pixels.shape[1]:
+        raise ValueError(
+            f"Playable-region crop requires a square 2-D raster, got shape {pixels.shape}"
+        )
+    side = pixels.shape[0]
+    inner_side = int(round(side / render_extent_multiplier))
+    if inner_side <= 0:
+        raise ValueError(
+            f"Playable region collapses to 0 pixels (side={side}, "
+            f"multiplier={render_extent_multiplier})."
+        )
+    start = (side - inner_side) // 2
+    end = start + inner_side
+    return pixels[start:end, start:end]
 
 
 def _compute_inputs_hash(tile: MapTile, context: StageContext) -> str:

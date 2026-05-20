@@ -40,6 +40,7 @@ def _stage_context(tmp_path: Path) -> StageContext:
     return StageContext(
         bounds=TEST_BOUNDS,
         target_bounds=TEST_BOUNDS,
+        playable_bounds=TEST_BOUNDS,
         working_crs=WGS84,
         seed=0,
         cache_directory=tmp_path / "cache",

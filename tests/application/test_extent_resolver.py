@@ -54,7 +54,7 @@ def _expected_side_metres(tile_side_metres: float, radius_tiles: int) -> float:
         (45.0, 10.0, 0, "cs1", CS1_TILE_SIDE_METRES),  # single-tile collapse
     ],
 )
-def test_should_produce_target_bounds_with_exact_metric_side_when_resolving_center_extent(
+def test_should_produce_playable_bounds_with_exact_metric_side_when_resolving_center_extent(
     latitude: float,
     longitude: float,
     radius_tiles: int,
@@ -69,12 +69,40 @@ def test_should_produce_target_bounds_with_exact_metric_side_when_resolving_cent
 
     resolved = resolve_extent(extent)
 
-    expected = _expected_side_metres(tile_side, radius_tiles)
-    width = resolved.target_bounds.east - resolved.target_bounds.west
-    height = resolved.target_bounds.north - resolved.target_bounds.south
+    expected_playable = _expected_side_metres(tile_side, radius_tiles)
+    playable_width = resolved.playable_bounds.east - resolved.playable_bounds.west
+    playable_height = resolved.playable_bounds.north - resolved.playable_bounds.south
 
-    assert width == pytest.approx(expected, abs=SIDE_TOLERANCE_METRES)
-    assert height == pytest.approx(expected, abs=SIDE_TOLERANCE_METRES)
+    assert playable_width == pytest.approx(expected_playable, abs=SIDE_TOLERANCE_METRES)
+    assert playable_height == pytest.approx(expected_playable, abs=SIDE_TOLERANCE_METRES)
+
+
+def test_should_scale_target_bounds_by_render_extent_multiplier_for_cs2() -> None:
+    """CS2's worldmap covers 4× the playable extent. target_bounds reflects that."""
+    extent = CenterExtent(
+        center=GeoPoint(longitude=-71.21, latitude=46.81),
+        radius_tiles=CS2_FULL_RADIUS,
+        target_id="cs2",
+    )
+
+    resolved = resolve_extent(extent)
+    playable_side = resolved.playable_bounds.east - resolved.playable_bounds.west
+    target_side = resolved.target_bounds.east - resolved.target_bounds.west
+
+    assert target_side == pytest.approx(4.0 * playable_side, abs=SIDE_TOLERANCE_METRES)
+
+
+def test_should_keep_target_and_playable_bounds_equal_for_cs1() -> None:
+    """CS1 has no separate worldmap; target_bounds and playable_bounds coincide."""
+    extent = CenterExtent(
+        center=GeoPoint(longitude=10.0, latitude=45.0),
+        radius_tiles=CS1_FULL_RADIUS,
+        target_id="cs1",
+    )
+
+    resolved = resolve_extent(extent)
+
+    assert resolved.target_bounds.as_tuple() == resolved.playable_bounds.as_tuple()
 
 
 def test_should_pick_utm_zone_19n_when_resolving_quebec_center() -> None:

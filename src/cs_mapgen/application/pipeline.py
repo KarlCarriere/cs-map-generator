@@ -114,19 +114,20 @@ class PipelineBuilder:
         self._artifact_store = store
         return self
 
-    def build_terrain_and_roads(self) -> Pipeline:
+    def build_terrain_and_roads(self, *, target_side_pixels: int | None = None) -> Pipeline:
         """Build the v0.2 pipeline: terrain (conditioned) + water + roads.
 
-        The name is kept for backward-compat with v0.1 callers. The pipeline now includes the
-        water branch — callers that did not register a water source get a fail-fast error.
+        `target_side_pixels` overrides the internal heightmap side length. CS2 uses a higher
+        value (e.g. 4096) so the worldmap output keeps real DEM resolution at full PNG size;
+        CS1 uses the default 1081. Callers that pass `None` get `DEFAULT_HEIGHTMAP_SIDE_PIXELS`.
         """
-        return self._build_full_pipeline()
+        return self._build_full_pipeline(target_side_pixels=target_side_pixels)
 
-    def build_full_pipeline(self) -> Pipeline:
+    def build_full_pipeline(self, *, target_side_pixels: int | None = None) -> Pipeline:
         """v0.2-explicit alias for `build_terrain_and_roads`. Prefer this in new code."""
-        return self._build_full_pipeline()
+        return self._build_full_pipeline(target_side_pixels=target_side_pixels)
 
-    def _build_full_pipeline(self) -> Pipeline:
+    def _build_full_pipeline(self, *, target_side_pixels: int | None = None) -> Pipeline:
         from cs_mapgen.application.stages.compose_map import ComposeMapStage
         from cs_mapgen.application.stages.condition_terrain import ConditionTerrainStage
         from cs_mapgen.application.stages.export_map import ExportMapStage
@@ -145,12 +146,16 @@ class PipelineBuilder:
         export_target = self._require(self._export_target, "export_target")
         artifact_store = self._require(self._artifact_store, "artifact_store")
 
+        prepare_terrain_kwargs: dict[str, int] = (
+            {"target_side_pixels": target_side_pixels} if target_side_pixels is not None else {}
+        )
+
         return Pipeline(
             stages=(
                 IngestDEMStage(dem_source=dem_source),
                 IngestRoadsStage(osm_source=osm_source),
                 IngestWaterStage(water_source=water_source),
-                PrepareTerrainStage(reprojector=reprojector),
+                PrepareTerrainStage(reprojector=reprojector, **prepare_terrain_kwargs),
                 ConditionTerrainStage(),
                 PrepareWaterStage(reprojector=reprojector),
                 QuantizeHeightmapStage(),

@@ -73,12 +73,13 @@ def srtm_cache_directory(tmp_path: Path) -> Iterator[Path]:
 def stage_context(fixture_bbox: GeoBounds, tmp_path: Path) -> StageContext:
     # Tests that use this fixture inject `IdentityReprojector`, which leaves coordinates
     # numerically unchanged. To keep target_bounds and the (faked) reprojected DEM consistent,
-    # we pin `working_crs` to WGS84 and set `target_bounds` to the same lat/lon rectangle as
-    # `fixture_bbox`. Production code uses a real UTM working CRS; the production path is
-    # exercised by integration tests that exercise PyprojReprojector for real.
+    # we pin `working_crs` to WGS84 and set both `target_bounds` and `playable_bounds` to the
+    # same lat/lon rectangle as `fixture_bbox` (no separate worldmap layer). Production CS2 path
+    # is exercised by integration tests that exercise PyprojReprojector for real.
     return StageContext(
         bounds=fixture_bbox,
         target_bounds=fixture_bbox,
+        playable_bounds=fixture_bbox,
         working_crs=Projection.wgs84(),
         seed=42,
         cache_directory=tmp_path / "cache",

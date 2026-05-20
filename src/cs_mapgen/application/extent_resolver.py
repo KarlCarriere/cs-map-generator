@@ -76,16 +76,24 @@ class ExtentResolutionError(InvalidExtentError):
 
 @dataclass(frozen=True, slots=True)
 class ResolvedExtent:
-    """A `MapExtent` resolved to the three artefacts the pipeline needs.
+    """A `MapExtent` resolved to the four artefacts the pipeline needs.
 
-    The invariants this object enforces:
-    - `target_bounds.crs == working_crs`
+    - `target_bounds`: the area the pipeline renders DEM over (working_crs). For CS1 this equals
+      `playable_bounds`; for CS2 it covers the worldmap extent (4× linearly, 16× by area).
+    - `playable_bounds`: the in-game playable area (working_crs). Always a centred subset of
+      `target_bounds`. The export adapter crops to this for `heightmap.png` / `water_mask.png`.
+    - `fetch_bounds`: WGS84 envelope of `target_bounds` (slightly padded so reprojection covers
+      the whole target square).
+    - `working_crs`: metric CRS, used for both bounds objects.
+
+    Invariants:
+    - `target_bounds.crs == playable_bounds.crs == working_crs`
     - `fetch_bounds.crs == Projection.wgs84()`
-    - `fetch_bounds` fully contains the projection of `target_bounds` back to WGS84 (plus a
-      small safety margin).
+    - `playable_bounds` is fully inside `target_bounds`.
     """
 
     target_bounds: GeoBounds
+    playable_bounds: GeoBounds
     fetch_bounds: GeoBounds
     working_crs: Projection
 
@@ -96,9 +104,26 @@ class ResolvedExtent:
                 f"(target_bounds=EPSG:{self.target_bounds.crs.epsg}, "
                 f"working_crs=EPSG:{self.working_crs.epsg})"
             )
+        if self.playable_bounds.crs.epsg != self.working_crs.epsg:
+            raise ExtentResolutionError(
+                "playable_bounds CRS must equal working_crs "
+                f"(playable_bounds=EPSG:{self.playable_bounds.crs.epsg}, "
+                f"working_crs=EPSG:{self.working_crs.epsg})"
+            )
         if self.fetch_bounds.crs.epsg != Projection.wgs84().epsg:
             raise ExtentResolutionError(
                 f"fetch_bounds must be WGS84 (got EPSG:{self.fetch_bounds.crs.epsg})"
+            )
+        if not (
+            self.target_bounds.west <= self.playable_bounds.west
+            and self.target_bounds.south <= self.playable_bounds.south
+            and self.playable_bounds.east <= self.target_bounds.east
+            and self.playable_bounds.north <= self.target_bounds.north
+        ):
+            raise ExtentResolutionError(
+                "playable_bounds must lie entirely inside target_bounds "
+                f"(target={self.target_bounds.as_tuple()}, "
+                f"playable={self.playable_bounds.as_tuple()})"
             )
 
 
@@ -132,22 +157,33 @@ def _resolve_center_extent(extent: CenterExtent) -> ResolvedExtent:
     working_crs = _pick_working_crs_for_point(center.longitude, center.latitude)
     centre_x, centre_y = _project_point_wgs84_to(working_crs, center.longitude, center.latitude)
 
-    side_metres = _side_length_metres(spec, extent.radius_tiles)
-    half_side = side_metres / 2.0
+    playable_side = _side_length_metres(spec, extent.radius_tiles)
+    target_side = playable_side * spec.render_extent_multiplier
 
-    target_bounds = _build_bounds(
-        west=centre_x - half_side,
-        south=centre_y - half_side,
-        east=centre_x + half_side,
-        north=centre_y + half_side,
-        crs=working_crs,
-    )
+    playable_bounds = _square_bounds(centre_x, centre_y, playable_side / 2.0, working_crs)
+    target_bounds = _square_bounds(centre_x, centre_y, target_side / 2.0, working_crs)
     fetch_bounds = _derive_fetch_envelope(target_bounds)
 
     return ResolvedExtent(
         target_bounds=target_bounds,
+        playable_bounds=playable_bounds,
         fetch_bounds=fetch_bounds,
         working_crs=working_crs,
+    )
+
+
+def _square_bounds(
+    centre_x: float,
+    centre_y: float,
+    half_side: float,
+    crs: Projection,
+) -> GeoBounds:
+    return _build_bounds(
+        west=centre_x - half_side,
+        south=centre_y - half_side,
+        east=centre_x + half_side,
+        north=centre_y + half_side,
+        crs=crs,
     )
 
 
@@ -160,8 +196,11 @@ def _resolve_bounds_extent(extent: BoundsExtent) -> ResolvedExtent:
 
     working_crs = pick_utm_projection(fetch_bounds)
     target_bounds = _inscribed_metric_rectangle(fetch_bounds, working_crs)
+    # BoundsExtent has no target_id and therefore no render_extent_multiplier — treat the
+    # explicit bbox as both target and playable (no separate wide-context layer).
     return ResolvedExtent(
         target_bounds=target_bounds,
+        playable_bounds=target_bounds,
         fetch_bounds=fetch_bounds,
         working_crs=working_crs,
     )

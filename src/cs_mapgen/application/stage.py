@@ -19,20 +19,25 @@ class StageContext:
     """Immutable per-run context. All side-effect dependencies (cache dir, RNG, logger) are
     passed explicitly — stages never reach for globals.
 
-    Two related bbox fields are carried so the pipeline can stay north-up and axis-aligned in
-    the working metric CRS:
+    Three related bbox fields are carried so the pipeline can stay north-up, axis-aligned in
+    the working metric CRS, and produce both `heightmap.png` and `worldmap.png` for CS2:
 
     - `bounds`: WGS84 lat/lon envelope used to query external data providers (DEM, OSM). This
       is always a superset of the rendered area; it has to be, because lat/lon rectangles
       reproject to non-axis-aligned UTM quadrilaterals and we need full coverage after
       reprojection.
     - `target_bounds`: the exact axis-aligned rectangle (in `working_crs` coordinates) that the
-      final heightmap, water mask, and quantised output cover. Downstream cropping in
+      full rendered terrain covers. For CS1 this equals `playable_bounds`. For CS2 it covers
+      the worldmap extent (4× linearly, 16× by area). Downstream cropping in
       `PrepareTerrainStage` and water rasterisation in `PrepareWaterStage` both key off this.
+    - `playable_bounds`: the in-game playable area (working_crs). A centred subset of
+      `target_bounds`. Export adapters crop to this for `heightmap.png` and `water_mask.png`;
+      the surrounding region in `target_bounds` feeds `worldmap.png` for CS2.
     """
 
     bounds: GeoBounds
     target_bounds: GeoBounds
+    playable_bounds: GeoBounds
     working_crs: Projection
     seed: int
     cache_directory: Path
@@ -45,6 +50,12 @@ class StageContext:
             raise ValueError(
                 "target_bounds CRS must equal working_crs "
                 f"(target_bounds=EPSG:{self.target_bounds.crs.epsg}, "
+                f"working_crs=EPSG:{self.working_crs.epsg})"
+            )
+        if self.playable_bounds.crs.epsg != self.working_crs.epsg:
+            raise ValueError(
+                "playable_bounds CRS must equal working_crs "
+                f"(playable_bounds=EPSG:{self.playable_bounds.crs.epsg}, "
                 f"working_crs=EPSG:{self.working_crs.epsg})"
             )
 

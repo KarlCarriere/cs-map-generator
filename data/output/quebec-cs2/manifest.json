@@ -4,36 +4,36 @@
       "mime": "image/png",
       "name": "heightmap.png",
       "path": "data/output/quebec-cs2/heightmap.png",
-      "sha256": "8a85a7896d1fa69a43acf65857b8f79588ac4bec8934f712f1be16ce3f199b05"
+      "sha256": "9b771bf3db3d9f6f8f02a53ced7006ee071c563f55f33c1045e9f14270d7b400"
     },
     {
       "mime": "image/png",
       "name": "worldmap.png",
       "path": "data/output/quebec-cs2/worldmap.png",
-      "sha256": "1f750bedc98d5339a68bec8a4d537f32ae2b2ab42104e75b1ddf3797f12ed714"
+      "sha256": "2c9529e3381e32eff101982278460fb5a67ac824edb730e0beac3eb2761fd658"
     },
     {
       "mime": "image/png",
       "name": "water_mask.png",
       "path": "data/output/quebec-cs2/water_mask.png",
-      "sha256": "02b8b791649fab7201d2f387084005c7f2ea06cbf4f80ab9ef7849c0a57d703e"
+      "sha256": "23d1700b2663d34b7d1610ed89771142ac5bbc691dbcf593a27ec0684f8ad164"
     },
     {
       "mime": "application/geo+json",
       "name": "roads.geojson",
       "path": "data/output/quebec-cs2/roads.geojson",
-      "sha256": "78591d0e60415156993d28f94d26be7fc30422e3f56499a44e05c80e0d8bbece"
+      "sha256": "a2f958a87a6bfe94626d980047e380d5ec4b918193ce8d737f5831b898889ca8"
     }
   ],
   "bounds": {
     "crs_epsg": 4326,
-    "east": -71.12161166006969,
-    "north": 46.87072064873358,
-    "south": 46.74922127047332,
-    "west": -71.29857505449974
+    "east": -70.82414797123805,
+    "north": 47.075580816685004,
+    "south": 46.54330440242821,
+    "west": -71.59943562450167
   },
   "created_at_utc": "2026-01-01T00:00:42+00:00",
-  "inputs_hash": "ad565e84d5785694d8ebbc11f97ac4fa19ca1d548712e58ab2636c3e393c701f",
+  "inputs_hash": "6dd7e37813b834cdb30d2540148cd0658bdca6c9d23e40bcdeab97dbdda4f396",
   "schema_version": 2,
   "seed": 42,
   "target": "cs2"

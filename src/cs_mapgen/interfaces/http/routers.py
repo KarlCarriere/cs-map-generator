@@ -134,6 +134,7 @@ def _make_context(
     return StageContext(
         bounds=resolved.fetch_bounds,
         target_bounds=resolved.target_bounds,
+        playable_bounds=resolved.playable_bounds,
         working_crs=resolved.working_crs,
         seed=payload.seed,
         cache_directory=settings.cache_directory,

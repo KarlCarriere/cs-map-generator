@@ -31,26 +31,45 @@ CS1_TILE_SIDE_METRES = 1920.0
 CS1_GRID_DIMENSION = 9
 CS1_DEFAULT_RADIUS_TILES = 4
 
-# CS2 per-tile side. Community-measured value (~623.3 m); Paradox rounds this down to 600 m
-# in public communications. 21 × 623.3 m ≈ 13.09 km, and 13.09² ≈ 171.3 km², which matches the
-# documented "441 tiles, 171.33 km² total area".
-# Source: cs2.paradoxwikis.com/Map_Creation + community measurements summarised in
-# en.number13.de/cities-skylines-2-how-big-is-the-map/ and the gameslearningsociety / gamerant
-# coverage cross-referenced in ADR 0003.
-# TODO(adr-0003): verify CS2 tile-side metres against an authoritative Colossal Order spec.
-CS2_TILE_SIDE_METRES = 623.3
+# CS2 playable area side length, per the Paradox dev diaries and cs2.paradoxwikis.com/Map_Creation
+# ("the heightmap PNG represents 14,336 m × 14,336 m"). Earlier versions of this module used a
+# community-measured per-tile value of 623.3 m; the wiki figure of 14,336 m total is the
+# authoritative one and produces a per-tile side of 14,336 / 21 ≈ 682.67 m. The community number
+# appears to have measured the navigable / build-zone area rather than the heightmap-stretched
+# extent that CS2 actually applies on import. Updated when the CS2 heightmap import was observed
+# to leave a ~10% green border on the rendered area at 623.3 m.
+CS2_PLAYABLE_SIDE_METRES = 14336.0
 CS2_GRID_DIMENSION = 21
+CS2_TILE_SIDE_METRES = CS2_PLAYABLE_SIDE_METRES / CS2_GRID_DIMENSION
 CS2_DEFAULT_RADIUS_TILES = 10
+
+# CS2 carries a separate `worldmap.png` showing the surroundings beyond the playable area. The
+# worldmap is 4096 × 4096 pixels with the playable area mapped to the center 1024 × 1024 region
+# (Paradox dev diaries + ADR 0002). The 4× pixel ratio at the same metres-per-pixel scale means
+# the worldmap covers 4× the playable area in linear extent → 16× in area. We carry this as a
+# `render_extent_multiplier` on the target spec so the pipeline fetches DEM/OSM over the full
+# worldmap extent and the export adapter can produce both heightmap.png and worldmap.png from a
+# single rendered terrain.
+CS1_RENDER_EXTENT_MULTIPLIER = 1.0
+CS2_RENDER_EXTENT_MULTIPLIER = 4.0
 
 
 @dataclass(frozen=True, slots=True)
 class TargetSpec:
-    """Immutable per-game tile-grid specification."""
+    """Immutable per-game tile-grid specification.
+
+    `render_extent_multiplier` controls how much terrain the pipeline fetches and renders
+    relative to the playable area. CS1 uses `1.0` (no wide-context output). CS2 uses `4.0` so
+    the resulting raster covers the worldmap extent (4× linear, 16× area) — the export adapter
+    then crops the centre 1/multiplier² for `heightmap.png` and uses the full thing as
+    `worldmap.png`.
+    """
 
     target_id: str
     tile_side_metres: float
     grid_dimension: int
     default_radius_tiles: int
+    render_extent_multiplier: float = 1.0
 
     def __post_init__(self) -> None:
         if self.tile_side_metres <= 0.0:
@@ -77,6 +96,11 @@ class TargetSpec:
                 f"default_radius_tiles {self.default_radius_tiles} exceeds the maximum radius "
                 f"{max_radius} implied by grid_dimension {self.grid_dimension}"
             )
+        if self.render_extent_multiplier < 1.0:
+            raise ValueError(
+                f"render_extent_multiplier must be >= 1.0 (got {self.render_extent_multiplier}); "
+                "the render extent always covers at least the playable area."
+            )
 
     @property
     def max_radius_tiles(self) -> int:
@@ -90,12 +114,14 @@ _REGISTRY: dict[str, TargetSpec] = {
         tile_side_metres=CS1_TILE_SIDE_METRES,
         grid_dimension=CS1_GRID_DIMENSION,
         default_radius_tiles=CS1_DEFAULT_RADIUS_TILES,
+        render_extent_multiplier=CS1_RENDER_EXTENT_MULTIPLIER,
     ),
     CS2_TARGET_ID: TargetSpec(
         target_id=CS2_TARGET_ID,
         tile_side_metres=CS2_TILE_SIDE_METRES,
         grid_dimension=CS2_GRID_DIMENSION,
         default_radius_tiles=CS2_DEFAULT_RADIUS_TILES,
+        render_extent_multiplier=CS2_RENDER_EXTENT_MULTIPLIER,
     ),
 }
 
