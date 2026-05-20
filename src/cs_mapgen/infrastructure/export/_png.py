@@ -47,6 +47,57 @@ def resample_uint16_nearest(pixels: np.ndarray, target_side: int) -> np.ndarray:
     return pixels[np.ix_(row_indices, col_indices)].astype(np.uint16, copy=False)
 
 
+def resample_uint16_bilinear(pixels: np.ndarray, target_side: int) -> np.ndarray:
+    """Bilinear resample of a square uint16 image to (target_side, target_side).
+
+    Use this for continuous-field rasters (heightmaps, worldmaps). For categorical / boolean
+    rasters use `resample_bool_nearest` — bilinear interpolation would fabricate intermediate
+    values that don't correspond to any source class.
+    """
+    if pixels.dtype != np.uint16:
+        raise ValueError(f"Expected uint16 pixels, got {pixels.dtype}")
+    if pixels.ndim != 2:
+        raise ValueError(f"Expected 2D pixels, got shape {pixels.shape}")
+    interpolated = bilinear_resample_2d(pixels.astype(np.float32, copy=False), target_side)
+    return np.clip(np.round(interpolated), 0.0, 65535.0).astype(np.uint16)
+
+
+def bilinear_resample_2d(values: np.ndarray, target_side: int) -> np.ndarray:
+    """Bilinear resample of an arbitrary float 2D array to (target_side, target_side).
+
+    Returns a fresh `float32` array. Determinism: pure NumPy, no SciPy/scikit-image — the
+    output is bit-identical across runs given the same input.
+
+    No-op when the input is already at the target side (returns the input cast to float32).
+    """
+    if values.ndim != 2:
+        raise ValueError(f"Expected 2D values, got shape {values.shape}")
+    rows, cols = values.shape
+    if rows == target_side and cols == target_side:
+        return values.astype(np.float32, copy=False)
+
+    source = values.astype(np.float32, copy=False)
+    row_coords = np.linspace(0.0, rows - 1, target_side, dtype=np.float64)
+    col_coords = np.linspace(0.0, cols - 1, target_side, dtype=np.float64)
+
+    row_floors = np.floor(row_coords).astype(np.int64)
+    col_floors = np.floor(col_coords).astype(np.int64)
+    row_ceils = np.minimum(row_floors + 1, rows - 1)
+    col_ceils = np.minimum(col_floors + 1, cols - 1)
+
+    row_fraction = (row_coords - row_floors).astype(np.float32)[:, None]
+    col_fraction = (col_coords - col_floors).astype(np.float32)[None, :]
+
+    top_left = source[np.ix_(row_floors, col_floors)]
+    top_right = source[np.ix_(row_floors, col_ceils)]
+    bottom_left = source[np.ix_(row_ceils, col_floors)]
+    bottom_right = source[np.ix_(row_ceils, col_ceils)]
+
+    top_row = top_left * (1.0 - col_fraction) + top_right * col_fraction
+    bottom_row = bottom_left * (1.0 - col_fraction) + bottom_right * col_fraction
+    return (top_row * (1.0 - row_fraction) + bottom_row * row_fraction).astype(np.float32)
+
+
 def resample_bool_nearest(mask: np.ndarray, target_side: int) -> np.ndarray:
     """Nearest-neighbour resample of a boolean mask to (target_side, target_side).
 

@@ -45,7 +45,7 @@ from cs_mapgen.infrastructure.export._png import (
     encode_uint8_grayscale_png,
     encode_uint16_grayscale_png,
     resample_bool_nearest,
-    resample_uint16_nearest,
+    resample_uint16_bilinear,
 )
 
 TARGET_ID = "cs2"
@@ -80,11 +80,11 @@ class CS2ExportTarget:
         rendered_pixels = tile.heightmap.pixels
         playable_pixels = _crop_playable_region(rendered_pixels, spec.render_extent_multiplier)
 
-        heightmap_pixels = resample_uint16_nearest(playable_pixels, HEIGHTMAP_SIDE_PIXELS)
+        heightmap_pixels = resample_uint16_bilinear(playable_pixels, HEIGHTMAP_SIDE_PIXELS)
         heightmap_bytes = encode_uint16_grayscale_png(heightmap_pixels)
         heightmap_entry = store.write(HEIGHTMAP_FILENAME, heightmap_bytes, context)
 
-        worldmap_pixels = resample_uint16_nearest(rendered_pixels, WORLDMAP_SIDE_PIXELS)
+        worldmap_pixels = resample_uint16_bilinear(rendered_pixels, WORLDMAP_SIDE_PIXELS)
         worldmap_bytes = encode_uint16_grayscale_png(worldmap_pixels)
         worldmap_entry = store.write(WORLDMAP_FILENAME, worldmap_bytes, context)
 

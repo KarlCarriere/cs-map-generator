@@ -162,22 +162,24 @@ class PrepareTerrainStage:
         NDArray[np.bool_],
         tuple[float, float, float, float, float, float],
     ]:
-        # Integer index nearest-neighbour resample — deterministic, vectorised, GDAL-free. The
-        # production `Reprojector` should already deliver the working-CRS grid; this final
-        # snap-to-(side, side) keeps the output shape pinned regardless of upstream grid size.
-        # We carry the nodata mask along so downstream conditioning sees real holes, not zeros.
+        # Bilinear resample of the continuous elevation field — produces a smooth heightmap
+        # without the staircase artefacts of nearest-neighbour upsampling (visible when the
+        # SRTM-native ~30 m grid is upsampled to 4096 px for CS2). The validity mask stays on a
+        # nearest-neighbour pick because it's categorical: bilinear-mixed validity (e.g. 0.5)
+        # has no meaningful interpretation.
+        from cs_mapgen.infrastructure.export._png import bilinear_resample_2d  # noqa: PLC0415
+
         rows, cols = elevation.shape
+        sampled_elevation = bilinear_resample_2d(elevation, target_side)
+
         row_indices = np.linspace(0, rows - 1, target_side).round().astype(np.int64)
         col_indices = np.linspace(0, cols - 1, target_side).round().astype(np.int64)
-        sampled_elevation = elevation[np.ix_(row_indices, col_indices)].astype(
-            np.float32, copy=True
-        )
         sampled_valid = valid_mask[np.ix_(row_indices, col_indices)]
         sampled_nodata = ~sampled_valid
 
         # Scale the source affine to the new pixel size while preserving the upper-left origin.
         # source_transform is (a, b, c, d, e, f) → pixel size (a, e), origin (c, f). After
-        # sub-sampling by index, the effective pixel size becomes (a * cols / target_side,
+        # resampling, the effective pixel size becomes (a * cols / target_side,
         # e * rows / target_side). For diagnostics and the water mask alignment this is the
         # correct affine to carry forward.
         a, b, c, d, e, f = source_transform

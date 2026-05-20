@@ -32,10 +32,10 @@ from cs_mapgen.infrastructure.export._geojson import (
     encode_road_network_geojson,
 )
 from cs_mapgen.infrastructure.export._png import (
-    encode_uint16_grayscale_png,
     encode_uint8_grayscale_png,
+    encode_uint16_grayscale_png,
     resample_bool_nearest,
-    resample_uint16_nearest,
+    resample_uint16_bilinear,
 )
 
 TARGET_ID = "cs1"
@@ -61,7 +61,7 @@ class CS1ExportTarget:
     ) -> ExportManifest:
         pixels = tile.heightmap.pixels
         if pixels.shape != (HEIGHTMAP_SIDE_PIXELS, HEIGHTMAP_SIDE_PIXELS):
-            pixels = resample_uint16_nearest(pixels, HEIGHTMAP_SIDE_PIXELS)
+            pixels = resample_uint16_bilinear(pixels, HEIGHTMAP_SIDE_PIXELS)
 
         heightmap_bytes = encode_uint16_grayscale_png(pixels)
         heightmap_entry = store.write(HEIGHTMAP_FILENAME, heightmap_bytes, context)
