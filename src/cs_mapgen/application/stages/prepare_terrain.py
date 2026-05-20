@@ -48,7 +48,7 @@ DEFAULT_ELEVATION_OFFSET_METRES = 100.0
 # typical of bilinear interpolation at non-integer ratios. A small Gaussian pass with sigma
 # comparable to the upsample ratio removes those artefacts without losing real terrain
 # features. Set to 0.0 to disable.
-DEFAULT_SMOOTHING_SIGMA_PIXELS = 1.5
+DEFAULT_SMOOTHING_SIGMA_PIXELS = 3
 MIN_HEIGHTMAP_SIDE_PIXELS = 32
 BILINEAR_RESAMPLING = "bilinear"
 
@@ -109,9 +109,7 @@ class PrepareTerrainStage:
         if target_side_pixels < MIN_HEIGHTMAP_SIDE_PIXELS:
             raise ValueError(f"target_side_pixels must be at least {MIN_HEIGHTMAP_SIDE_PIXELS}")
         if smoothing_sigma_pixels < 0.0:
-            raise ValueError(
-                f"smoothing_sigma_pixels must be >= 0, got {smoothing_sigma_pixels}"
-            )
+            raise ValueError(f"smoothing_sigma_pixels must be >= 0, got {smoothing_sigma_pixels}")
         self._reprojector = reprojector
         self._target_side_pixels = target_side_pixels
         self._height_scale_metres = height_scale_metres
@@ -178,8 +176,8 @@ class PrepareTerrainStage:
         offset = self._elevation_offset_metres
         if offset != 0.0:
             valid_pixels = ~resampled_nodata
-            resampled_elevation[valid_pixels] = (
-                resampled_elevation[valid_pixels] + np.float32(offset)
+            resampled_elevation[valid_pixels] = resampled_elevation[valid_pixels] + np.float32(
+                offset
             )
             valid_min += offset
             valid_max += offset
@@ -280,8 +278,7 @@ def _crop_to_target_bounds(
     pixel_width, b, west_origin, d, pixel_height, north_origin = transform
     if b != 0.0 or d != 0.0:
         raise ValueError(
-            "Cropping only supports axis-aligned (no-shear) source transforms. "
-            f"Got b={b}, d={d}."
+            f"Cropping only supports axis-aligned (no-shear) source transforms. Got b={b}, d={d}."
         )
     if pixel_width <= 0.0 or pixel_height >= 0.0:
         # rasterio convention: pixel_height is negative (y decreases downward). Refuse
