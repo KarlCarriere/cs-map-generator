@@ -48,7 +48,7 @@ UINT16_MAX_VALUE = 65535
 # carve to a configurable depth (default 5 m) so the user can tweak the water level by a few
 # metres without losing the rivers, and rivers gain a realistic bed depth instead of being
 # infinitely thin.
-DEFAULT_WATER_CARVE_DEPTH_METRES = 10.0
+DEFAULT_WATER_CARVE_DEPTH_METRES = 100.0
 # Floor on the carve depth in quantised-step units — never carve LESS than one step below sea
 # level (Z-fight protection). The user's configured depth is `max(configured, this_floor)`.
 MIN_WATER_CARVE_QUANTISATION_STEPS = 1.0
