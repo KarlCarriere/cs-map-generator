@@ -201,18 +201,20 @@ def test_should_carve_at_least_one_quantisation_step_when_configured_depth_is_ze
 def test_should_leave_water_cell_untouched_when_elevation_is_already_below_carve_target(
     tmp_path: Path,
 ) -> None:
-    # Arrange: a water cell already at 10 m — well below the default carve target (35 m).
-    # The stage must NOT raise it; it must stay at its natural sub-sea-level elevation.
+    # Arrange: explicit 5 m carve depth → carve target = 35 m. A water cell already at 10 m is
+    # well below that target — the stage must NOT raise it. Using an explicit depth here keeps
+    # this property test independent of any future change to `DEFAULT_WATER_CARVE_DEPTH_METRES`.
     pre_existing_elevation_metres = 10.0
+    explicit_depth_metres = 5.0
 
     terrain = _uniform_terrain(pre_existing_elevation_metres)
     inputs = _prepare_water_result(terrain, _all_water_mask())
-    stage = QuantizeHeightmapStage()  # default 5 m depth → carve target = 35 m
+    stage = QuantizeHeightmapStage(water_carve_depth_metres=explicit_depth_metres)
 
     # Act
     result = stage.run(inputs, _stage_context(tmp_path))
 
-    # Assert: decoded elevation stays near the original 10 m (not raised to 35 m).
+    # Assert: decoded elevation stays near the original 10 m (not raised toward the carve target).
     centre_pixel = int(result.heightmap.pixels[GRID_SIDE // 2, GRID_SIDE // 2])
     decoded_metres = _decode_pixel_to_metres(centre_pixel)
     assert abs(decoded_metres - pre_existing_elevation_metres) <= _HALF_STEP

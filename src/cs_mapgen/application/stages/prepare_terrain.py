@@ -42,6 +42,13 @@ DEFAULT_SEA_LEVEL_METRES = 40.0
 # (`sea_level_metres`) is shifted by the same offset so the in-game water plane stays aligned
 # with the rivers carved against it — only the absolute baseline rises, not the relative depth.
 DEFAULT_ELEVATION_OFFSET_METRES = 100.0
+# Gaussian smoothing sigma (in pixels of the resampled grid) applied to the elevation field
+# AFTER the bilinear resample. The bilinear upsample from SRTM's ~30 m grid to the 4096 px CS2
+# grid (~14 m/px) is a ~2.1× ratio, which produces faint diagonal diamond-shaped artefacts
+# typical of bilinear interpolation at non-integer ratios. A small Gaussian pass with sigma
+# comparable to the upsample ratio removes those artefacts without losing real terrain
+# features. Set to 0.0 to disable.
+DEFAULT_SMOOTHING_SIGMA_PIXELS = 1.5
 MIN_HEIGHTMAP_SIDE_PIXELS = 32
 BILINEAR_RESAMPLING = "bilinear"
 
@@ -97,14 +104,20 @@ class PrepareTerrainStage:
         height_scale_metres: float = DEFAULT_HEIGHT_SCALE_METRES,
         sea_level_metres: float = DEFAULT_SEA_LEVEL_METRES,
         elevation_offset_metres: float = DEFAULT_ELEVATION_OFFSET_METRES,
+        smoothing_sigma_pixels: float = DEFAULT_SMOOTHING_SIGMA_PIXELS,
     ) -> None:
         if target_side_pixels < MIN_HEIGHTMAP_SIDE_PIXELS:
             raise ValueError(f"target_side_pixels must be at least {MIN_HEIGHTMAP_SIDE_PIXELS}")
+        if smoothing_sigma_pixels < 0.0:
+            raise ValueError(
+                f"smoothing_sigma_pixels must be >= 0, got {smoothing_sigma_pixels}"
+            )
         self._reprojector = reprojector
         self._target_side_pixels = target_side_pixels
         self._height_scale_metres = height_scale_metres
         self._sea_level_metres = sea_level_metres
         self._elevation_offset_metres = elevation_offset_metres
+        self._smoothing_sigma_pixels = smoothing_sigma_pixels
 
     def run(self, inputs: IngestWaterResult, context: StageContext) -> PrepareTerrainResult:
         reprojected = self._reprojector.reproject_raster(
@@ -143,6 +156,19 @@ class PrepareTerrainStage:
             cropped_transform,
             self._target_side_pixels,
         )
+
+        # Smooth out bilinear-upsample artefacts (faint diagonal "diamond" patterns from the
+        # non-integer SRTM-to-target ratio). A small Gaussian pass removes those without
+        # damaging the real terrain shape; sigma is in pixels of the resampled grid. Skipped
+        # entirely when configured to 0.
+        if self._smoothing_sigma_pixels > 0.0:
+            from scipy.ndimage import gaussian_filter  # noqa: PLC0415
+
+            resampled_elevation = gaussian_filter(
+                resampled_elevation,
+                sigma=self._smoothing_sigma_pixels,
+                mode="nearest",
+            ).astype(np.float32, copy=False)
 
         # Lift every real elevation by `elevation_offset_metres`. The carve target is shifted by
         # the same amount via `sea_level_metres + offset`, so water cells (carved to the shifted
