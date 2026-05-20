@@ -4,13 +4,13 @@
       "mime": "image/png",
       "name": "heightmap.png",
       "path": "data/output/montreal-cs2/heightmap.png",
-      "sha256": "baa343c03f3bc05fbd49462416304736f5774eced0c46c809aa6c5a1ff5cffd9"
+      "sha256": "fbb1322ce9d4baade55a1fc4da8b70877d10fa72d9ff57dabe32a8c9a5f5d3f3"
     },
     {
       "mime": "image/png",
       "name": "worldmap.png",
       "path": "data/output/montreal-cs2/worldmap.png",
-      "sha256": "7be20ff99e7d7ac4a13d9c47baea1cf2962aaa42511ac303046c34d67ea28867"
+      "sha256": "0da5cb009ff85ad31425d399b52b96c5001a3b54abac0444be20c8a0768dd30f"
     },
     {
       "mime": "image/png",
@@ -22,7 +22,7 @@
       "mime": "application/geo+json",
       "name": "roads.geojson",
       "path": "data/output/montreal-cs2/roads.geojson",
-      "sha256": "e66137cc2fc1866925b18e38b2a7345bf3017aea6bb1deeba0169b1c7bd181e0"
+      "sha256": "758e888b2cdac3d8c2274eeb6af5f836a71e43bfcab6e570387a5a9dee0b26da"
     }
   ],
   "bounds": {
@@ -33,7 +33,7 @@
     "west": -73.933281476474
   },
   "created_at_utc": "2026-01-01T00:00:42+00:00",
-  "inputs_hash": "9f9c1de194a3847e344492a53e8868431f8ea24b52450c5e2b963106fcf3b384",
+  "inputs_hash": "9e2be8763d4ab9eff50819b1b3836cb5ee58188157ceecb75303c35ff5ef89bd",
   "schema_version": 2,
   "seed": 42,
   "target": "cs2"

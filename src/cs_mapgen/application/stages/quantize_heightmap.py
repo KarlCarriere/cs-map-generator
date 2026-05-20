@@ -7,18 +7,22 @@ This is the third (and final) terrain stage in the v0.2 pipeline:
     PrepareWaterStage     -> rasterise water onto the same grid (WaterMask)
    *QuantizeHeightmapStage* -> CARVE under WaterMask, linear stretch, quantise to uint16
 
-Carving rule (documented in ADR 0005):
+Carving rule (amends ADR 0005 §1):
 
-For every pixel where `water_mask.mask == True`, the heightmap pixel's elevation is clamped to
-just below `sea_level_metres` so the in-game water plane covers it cleanly. We clamp at
-`sea_level_metres - epsilon` where epsilon is one uint16 quantisation step (`height_scale /
-65535`). Going lower would punch unnecessary holes; clamping exactly at sea level can leave the
-water plane Z-fighting with the terrain on some GPUs.
+For every pixel where `water_mask.mask == True` AND the pixel's elevation is currently above
+the carve target, the elevation is clamped to `sea_level_metres - water_carve_depth_metres`.
+The default depth is 5 m (was "one uint16 quantisation step" ≈ 1.56 cm at the original
+spec — too tight, because the in-editor water-level slider has to land within that interval
+or every river drains). 5 m gives a comfortable slider margin AND gives rivers a realistic
+bed depth instead of being infinitely thin sheets right at the surface. Pixels already below
+the carve target (Dutch polders, natural bathymetry) are left alone — over-carving would
+erase real elevation detail without benefit. A floor of one quantisation step ensures we
+never carve LESS than the Z-fight margin.
 
 Why carving on the float array (not the uint16 array): we want the post-carve elevation to map
-cleanly through the linear-stretch normalisation. Carving in uint16 space requires the
-stretch parameters to already match the float relief; staying in float lets the stretch absorb
-the carve and produce a single-pass result.
+cleanly through the absolute encoding. Carving in uint16 space requires the
+encoding parameters to already match the float relief; staying in float lets the encoding
+absorb the carve and produce a single-pass result.
 
 Determinism: pure NumPy. No RNG, no I/O.
 """
@@ -37,10 +41,17 @@ from cs_mapgen.domain.raster import HEIGHTMAP_UINT16_DTYPE, Heightmap
 from cs_mapgen.domain.water import WaterMask
 
 UINT16_MAX_VALUE = 65535
-# Small offset below sea level so the in-game water plane sits above the carved terrain rather
-# than at exact equality (which causes Z-fighting on some GPUs). One uint16 step at the default
-# 1024 m scale is ~1.56 cm — invisible to the player, robust to GPU precision quirks.
-SEA_LEVEL_EPSILON_QUANTISATION_STEPS = 1.0
+# How far BELOW sea level water cells are carved. The original ADR 0005 spec was
+# "one uint16 quantisation step" (~1.56 cm at the default 1024 m scale) — just enough to dodge
+# Z-fighting between the engine water plane and the carved terrain. That tolerance is too tight
+# for in-editor use: any small nudge to the CS2 water-level slider drains every river. We now
+# carve to a configurable depth (default 5 m) so the user can tweak the water level by a few
+# metres without losing the rivers, and rivers gain a realistic bed depth instead of being
+# infinitely thin.
+DEFAULT_WATER_CARVE_DEPTH_METRES = 5.0
+# Floor on the carve depth in quantised-step units — never carve LESS than one step below sea
+# level (Z-fight protection). The user's configured depth is `max(configured, this_floor)`.
+MIN_WATER_CARVE_QUANTISATION_STEPS = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,9 +62,26 @@ class QuantizeHeightmapResult:
 
 
 class QuantizeHeightmapStage:
-    """Carve under water mask, linearly stretch to `[0, height_scale]`, quantise to uint16."""
+    """Carve under water mask, encode elevation as absolute metres, quantise to uint16.
+
+    `water_carve_depth_metres` is how far below `sea_level_metres` water cells are clamped. The
+    default 5 m gives the user a comfortable margin to nudge CS2's water-level slider before
+    rivers start draining or land starts flooding. Pass `0.0` to fall back to the historical
+    "one uint16 step" carve (rivers will look razor-thin and disappear on the slightest slider
+    move).
+    """
 
     name = "quantize_heightmap"
+
+    def __init__(
+        self,
+        water_carve_depth_metres: float = DEFAULT_WATER_CARVE_DEPTH_METRES,
+    ) -> None:
+        if water_carve_depth_metres < 0.0:
+            raise ValueError(
+                f"water_carve_depth_metres must be >= 0, got {water_carve_depth_metres}"
+            )
+        self._water_carve_depth_metres = water_carve_depth_metres
 
     def run(
         self,
@@ -80,9 +108,11 @@ class QuantizeHeightmapStage:
         height_scale = prepared.height_scale_metres
         sea_level = prepared.sea_level_metres
         quantisation_step_metres = height_scale / UINT16_MAX_VALUE
-        carve_target_metres = (
-            sea_level - quantisation_step_metres * SEA_LEVEL_EPSILON_QUANTISATION_STEPS
+        min_carve_depth_metres = (
+            quantisation_step_metres * MIN_WATER_CARVE_QUANTISATION_STEPS
         )
+        carve_depth_metres = max(self._water_carve_depth_metres, min_carve_depth_metres)
+        carve_target_metres = sea_level - carve_depth_metres
 
         # Carve: any cell flagged as water is forced to `carve_target_metres`, but only if its
         # current elevation is ABOVE that target. Cells already below sea level (e.g. a Dutch
