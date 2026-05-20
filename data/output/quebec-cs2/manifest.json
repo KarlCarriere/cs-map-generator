@@ -22,7 +22,7 @@
       "mime": "application/geo+json",
       "name": "roads.geojson",
       "path": "data/output/quebec-cs2/roads.geojson",
-      "sha256": "554e3552631797f6fac1ec6aa67c3cce66ca948fb458618ba49a5db8493cd437"
+      "sha256": "64d3ac23e972687f64a15ee00c65c2250ad9b1941808055e581441c73a7c4f8c"
     }
   ],
   "bounds": {
@@ -33,7 +33,7 @@
     "west": -71.59943562450167
   },
   "created_at_utc": "2026-01-01T00:00:42+00:00",
-  "inputs_hash": "d26000ca764ee493bd44aaf5afeb71b7a2d0ba03859a8990a06d9a519e8d2304",
+  "inputs_hash": "8502a818f83ef840345bf78037440242a563c8bee14938bc5915ce7fb7929754",
   "schema_version": 2,
   "seed": 42,
   "target": "cs2"

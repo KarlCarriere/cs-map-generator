@@ -62,6 +62,40 @@ def resample_uint16_bilinear(pixels: np.ndarray, target_side: int) -> np.ndarray
     return np.clip(np.round(interpolated), 0.0, 65535.0).astype(np.uint16)
 
 
+def fill_nodata_nearest_valid(
+    values: np.ndarray,
+    valid_mask: np.ndarray,
+) -> np.ndarray:
+    """Replace each invalid pixel with the value of its nearest valid neighbour.
+
+    SRTM voids and tile gaps leave large negative sentinels (`-32768` or `-9999`) in the
+    elevation array. Bilinear resampling without this fill smears those sentinels into adjacent
+    real pixels, producing artificial black holes and uneven patches after absolute uint16
+    encoding. Filling before resample keeps the validity mask intact (downstream stages still
+    know which pixels were originally nodata) while ensuring the interpolation operates on
+    sensible neighbour values.
+
+    Returns the input unchanged when `valid_mask` is all-True (no fill needed) or all-False
+    (nothing to fill from — caller should fail before this point).
+    """
+    if values.shape != valid_mask.shape:
+        raise ValueError(
+            f"values {values.shape} and valid_mask {valid_mask.shape} must have the same shape"
+        )
+    if bool(valid_mask.all()):
+        return values
+    if not bool(valid_mask.any()):
+        return values
+    from scipy.ndimage import distance_transform_edt  # noqa: PLC0415
+
+    # `distance_transform_edt(input)` with `return_indices=True` returns the indices of the
+    # nearest ZERO-valued pixel for each input pixel. We feed `~valid_mask` so invalid pixels
+    # (True) get the indices of their nearest valid (False) neighbour; valid pixels point to
+    # themselves at distance 0.
+    indices = distance_transform_edt(~valid_mask, return_indices=True)[1]
+    return values[indices[0], indices[1]]
+
+
 def bilinear_resample_2d(values: np.ndarray, target_side: int) -> np.ndarray:
     """Bilinear resample of an arbitrary float 2D array to (target_side, target_side).
 

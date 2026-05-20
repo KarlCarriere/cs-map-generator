@@ -167,10 +167,21 @@ class PrepareTerrainStage:
         # SRTM-native ~30 m grid is upsampled to 4096 px for CS2). The validity mask stays on a
         # nearest-neighbour pick because it's categorical: bilinear-mixed validity (e.g. 0.5)
         # has no meaningful interpretation.
-        from cs_mapgen.infrastructure.export._png import bilinear_resample_2d  # noqa: PLC0415
+        #
+        # NODATA FILL: before resampling, replace nodata sentinels (-32768 / -9999) with the
+        # value of the nearest valid neighbour. Without this, bilinear interpolation blends the
+        # large-negative sentinels into adjacent valid pixels, producing values that the
+        # downstream absolute-encoder clips to 0 — visible as random black holes / patches in
+        # the final heightmap. The validity mask is propagated unchanged so downstream stages
+        # still know which pixels were originally nodata.
+        from cs_mapgen.infrastructure.export._png import (  # noqa: PLC0415
+            bilinear_resample_2d,
+            fill_nodata_nearest_valid,
+        )
 
         rows, cols = elevation.shape
-        sampled_elevation = bilinear_resample_2d(elevation, target_side)
+        filled_elevation = fill_nodata_nearest_valid(elevation, valid_mask)
+        sampled_elevation = bilinear_resample_2d(filled_elevation, target_side)
 
         row_indices = np.linspace(0, rows - 1, target_side).round().astype(np.int64)
         col_indices = np.linspace(0, cols - 1, target_side).round().astype(np.int64)
