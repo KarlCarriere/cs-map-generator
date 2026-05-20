@@ -48,7 +48,7 @@ UINT16_MAX_VALUE = 65535
 # carve to a configurable depth (default 5 m) so the user can tweak the water level by a few
 # metres without losing the rivers, and rivers gain a realistic bed depth instead of being
 # infinitely thin.
-DEFAULT_WATER_CARVE_DEPTH_METRES = 5.0
+DEFAULT_WATER_CARVE_DEPTH_METRES = 10.0
 # Floor on the carve depth in quantised-step units — never carve LESS than one step below sea
 # level (Z-fight protection). The user's configured depth is `max(configured, this_floor)`.
 MIN_WATER_CARVE_QUANTISATION_STEPS = 1.0
@@ -108,9 +108,7 @@ class QuantizeHeightmapStage:
         height_scale = prepared.height_scale_metres
         sea_level = prepared.sea_level_metres
         quantisation_step_metres = height_scale / UINT16_MAX_VALUE
-        min_carve_depth_metres = (
-            quantisation_step_metres * MIN_WATER_CARVE_QUANTISATION_STEPS
-        )
+        min_carve_depth_metres = quantisation_step_metres * MIN_WATER_CARVE_QUANTISATION_STEPS
         carve_depth_metres = max(self._water_carve_depth_metres, min_carve_depth_metres)
         carve_target_metres = sea_level - carve_depth_metres
 
@@ -187,5 +185,3 @@ def _absolute_encode(
     valid_max = float(elevation[valid_mask].max())
     encoded = np.where(valid_mask, elevation / height_scale_metres, 0.0)
     return np.clip(encoded, 0.0, 1.0).astype(np.float32), valid_min, valid_max
-
-

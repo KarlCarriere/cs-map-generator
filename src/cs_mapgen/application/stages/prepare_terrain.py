@@ -36,6 +36,12 @@ from cs_mapgen.domain.water import WaterFeatures
 DEFAULT_HEIGHTMAP_SIDE_PIXELS = 1081
 DEFAULT_HEIGHT_SCALE_METRES = 1024.0
 DEFAULT_SEA_LEVEL_METRES = 40.0
+# Constant metres added to every valid elevation pixel before it leaves this stage. Lifts the
+# whole terrain off the absolute-encoding floor (uint16 value 0 = 0 m) so there's room below
+# real-world sea level in CS2 for sub-water carving and slider tweaks. The carve target
+# (`sea_level_metres`) is shifted by the same offset so the in-game water plane stays aligned
+# with the rivers carved against it — only the absolute baseline rises, not the relative depth.
+DEFAULT_ELEVATION_OFFSET_METRES = 100.0
 MIN_HEIGHTMAP_SIDE_PIXELS = 32
 BILINEAR_RESAMPLING = "bilinear"
 
@@ -90,6 +96,7 @@ class PrepareTerrainStage:
         target_side_pixels: int = DEFAULT_HEIGHTMAP_SIDE_PIXELS,
         height_scale_metres: float = DEFAULT_HEIGHT_SCALE_METRES,
         sea_level_metres: float = DEFAULT_SEA_LEVEL_METRES,
+        elevation_offset_metres: float = DEFAULT_ELEVATION_OFFSET_METRES,
     ) -> None:
         if target_side_pixels < MIN_HEIGHTMAP_SIDE_PIXELS:
             raise ValueError(f"target_side_pixels must be at least {MIN_HEIGHTMAP_SIDE_PIXELS}")
@@ -97,6 +104,7 @@ class PrepareTerrainStage:
         self._target_side_pixels = target_side_pixels
         self._height_scale_metres = height_scale_metres
         self._sea_level_metres = sea_level_metres
+        self._elevation_offset_metres = elevation_offset_metres
 
     def run(self, inputs: IngestWaterResult, context: StageContext) -> PrepareTerrainResult:
         reprojected = self._reprojector.reproject_raster(
@@ -136,6 +144,20 @@ class PrepareTerrainStage:
             self._target_side_pixels,
         )
 
+        # Lift every real elevation by `elevation_offset_metres`. The carve target is shifted by
+        # the same amount via `sea_level_metres + offset`, so water cells (carved to the shifted
+        # sea level) still sit just below the in-game water plane when the user sets CS2's water
+        # level to `sea_level_metres + offset`. Nodata cells are left at their sentinel — the
+        # mask, not the value, is the authority on validity.
+        offset = self._elevation_offset_metres
+        if offset != 0.0:
+            valid_pixels = ~resampled_nodata
+            resampled_elevation[valid_pixels] = (
+                resampled_elevation[valid_pixels] + np.float32(offset)
+            )
+            valid_min += offset
+            valid_max += offset
+
         prepared = PreparedTerrain(
             elevation=resampled_elevation,
             nodata_mask=resampled_nodata,
@@ -143,7 +165,7 @@ class PrepareTerrainStage:
             relief_min_metres=valid_min,
             relief_max_metres=valid_max,
             height_scale_metres=self._height_scale_metres,
-            sea_level_metres=self._sea_level_metres,
+            sea_level_metres=self._sea_level_metres + offset,
         )
         return PrepareTerrainResult(
             prepared_terrain=prepared,

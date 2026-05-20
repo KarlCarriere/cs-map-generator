@@ -4,13 +4,13 @@
       "mime": "image/png",
       "name": "heightmap.png",
       "path": "data/output/quebec-cs2/heightmap.png",
-      "sha256": "8ff8c41ee89e107431fc136e26777ab777ceb77e1eeb13dfe62426e1b80cb4b4"
+      "sha256": "0e2132305c5a861aea65da411bc7c260bb1ff799774e91c83018870c2eafa3a6"
     },
     {
       "mime": "image/png",
       "name": "worldmap.png",
       "path": "data/output/quebec-cs2/worldmap.png",
-      "sha256": "8a2df2220f9fcb64a3a7d12e2b1c62371a5287bfb5fceea04a08e7deae93bc85"
+      "sha256": "4ce6b64a5d3b937cb3f4892282abea15a5f7142b05f76aa27f5e02df84f77151"
     },
     {
       "mime": "image/png",
@@ -22,7 +22,7 @@
       "mime": "application/geo+json",
       "name": "roads.geojson",
       "path": "data/output/quebec-cs2/roads.geojson",
-      "sha256": "64d3ac23e972687f64a15ee00c65c2250ad9b1941808055e581441c73a7c4f8c"
+      "sha256": "b862329baba7821e7fec0ac62a72a5ca1d9c3c4a586b9587d418b0f29edc6bdc"
     }
   ],
   "bounds": {
@@ -33,7 +33,7 @@
     "west": -71.59943562450167
   },
   "created_at_utc": "2026-01-01T00:00:42+00:00",
-  "inputs_hash": "8502a818f83ef840345bf78037440242a563c8bee14938bc5915ce7fb7929754",
+  "inputs_hash": "d89c882b2a0db02ae31c60bc85d7cfe21ec4a81f1e9aba3fc91bfa2d90c68d61",
   "schema_version": 2,
   "seed": 42,
   "target": "cs2"
